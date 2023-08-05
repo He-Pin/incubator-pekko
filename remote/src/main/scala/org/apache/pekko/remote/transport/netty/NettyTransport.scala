@@ -14,7 +14,7 @@
 package org.apache.pekko.remote.transport.netty
 
 import java.net.{ InetAddress, InetSocketAddress, SocketAddress }
-import java.util.concurrent.{ CancellationException, ConcurrentHashMap, Executors }
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 
 import scala.annotation.nowarn
@@ -24,35 +24,34 @@ import scala.util.Try
 import scala.util.control.{ NoStackTrace, NonFatal }
 
 import com.typesafe.config.Config
-import org.jboss.netty.bootstrap.{ Bootstrap, ClientBootstrap, ServerBootstrap }
-import org.jboss.netty.buffer.{ ChannelBuffer, ChannelBuffers }
-import org.jboss.netty.channel._
-import org.jboss.netty.channel.group.{
+import org.apache.pekko
+
+import org.apache.pekko.{ ConfigurationException, OnlyCauseStackTrace }
+import org.apache.pekko.actor.{ ActorSystem, Address, ExtendedActorSystem }
+import org.apache.pekko.dispatch.ThreadPoolConfig
+import org.apache.pekko.event.Logging
+import org.apache.pekko.remote.RARP
+import org.apache.pekko.remote.transport.{ AssociationHandle, Transport }
+import org.apache.pekko.remote.transport.AssociationHandle.HandleEventListener
+import org.apache.pekko.remote.transport.Transport._
+import org.apache.pekko.util.{ Helpers, OptionVal }
+import org.apache.pekko.util.Helpers.Requiring
+
+import io.netty.bootstrap.{ Bootstrap, ServerBootstrap }
+import io.netty.buffer.{ ByteBuf, Unpooled }
+import io.netty.channel._
+import io.netty.channel.group.{
   ChannelGroup,
   ChannelGroupFuture,
   ChannelGroupFutureListener,
+  ChannelMatchers,
   DefaultChannelGroup
 }
-import org.jboss.netty.channel.socket.nio.{
-  NioClientSocketChannelFactory,
-  NioServerSocketChannelFactory,
-  NioWorkerPool
-}
-import org.jboss.netty.handler.codec.frame.{ LengthFieldBasedFrameDecoder, LengthFieldPrepender }
-import org.jboss.netty.handler.ssl.SslHandler
-import org.jboss.netty.util.HashedWheelTimer
-import org.apache.pekko
-import pekko.ConfigurationException
-import pekko.OnlyCauseStackTrace
-import pekko.actor.{ ActorSystem, Address, ExtendedActorSystem }
-import pekko.dispatch.ThreadPoolConfig
-import pekko.event.Logging
-import pekko.remote.RARP
-import pekko.remote.transport.{ AssociationHandle, Transport }
-import pekko.util.{ Helpers, OptionVal }
-import AssociationHandle.HandleEventListener
-import Transport._
-import Helpers.Requiring
+import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.nio.{ NioServerSocketChannel, NioSocketChannel }
+import io.netty.handler.codec.{ LengthFieldBasedFrameDecoder, LengthFieldPrepender }
+import io.netty.handler.ssl.SslHandler
 
 @deprecated("Classic remoting is deprecated, use Artery", "Akka 2.6.0")
 object NettyFutureBridge {
@@ -62,9 +61,9 @@ object NettyFutureBridge {
       def operationComplete(future: ChannelFuture): Unit =
         p.complete(
           Try(
-            if (future.isSuccess) future.getChannel
+            if (future.isSuccess) future.channel()
             else if (future.isCancelled) throw new CancellationException
-            else throw future.getCause))
+            else throw future.cause()))
     })
     p.future
   }
@@ -76,12 +75,12 @@ object NettyFutureBridge {
       def operationComplete(future: ChannelGroupFuture): Unit =
         p.complete(
           Try(
-            if (future.isCompleteSuccess) future.getGroup
+            if (future.isSuccess) future.group()
             else
               throw future.iterator.asScala
                 .collectFirst {
                   case f if f.isCancelled => new CancellationException
-                  case f if !f.isSuccess  => f.getCause
+                  case f if !f.isSuccess  => f.cause()
                 }
                 .getOrElse(new IllegalStateException(
                   "Error reported in ChannelGroupFuture, but no error found in individual futures."))))
@@ -171,8 +170,6 @@ class NettyTransportSettings(config: Config) {
     case value => value.toInt
   }
 
-  val SslSettings: Option[SSLSettings] = if (EnableSsl) Some(new SSLSettings(config.getConfig("security"))) else None
-
   val ServerSocketWorkerPoolSize: Int = computeWPS(config.getConfig("server-socket-worker-pool"))
 
   val ClientSocketWorkerPoolSize: Int = computeWPS(config.getConfig("client-socket-worker-pool"))
@@ -183,19 +180,24 @@ class NettyTransportSettings(config: Config) {
       config.getDouble("pool-size-factor"),
       config.getInt("pool-size-max"))
 
-  // Check Netty version >= 3.10.6
+  // Check Netty version >= 4.1.94
   {
-    val nettyVersion = org.jboss.netty.util.Version.ID
+    val nettyVersions = io.netty.util.Version.identify()
+    val nettyVersion = nettyVersions.values().stream().filter(_.artifactId() == "netty-transport")
+      .findFirst()
+      .map(_.artifactVersion())
+      .orElseThrow(() => throw new IllegalArgumentException("Can not read netty-transport's version."))
+
     def throwInvalidNettyVersion(): Nothing = {
       throw new IllegalArgumentException(
-        "pekko-remote with the Netty transport requires Netty version 3.10.6 or " +
+        "pekko-remote with the Netty transport requires Netty version 4.1.94 or " +
         s"later. Version [$nettyVersion] is on the class path. Issue https://github.com/netty/netty/pull/4739 " +
         "may cause messages to not be delivered.")
     }
 
     try {
       val segments: Array[String] = nettyVersion.split("[.-]")
-      if (segments.length < 3 || segments(0).toInt != 3 || segments(1).toInt != 10 || segments(2).toInt < 6)
+      if (segments.length < 3 || segments(0).toInt != 4 || segments(1).toInt != 1 || segments(2).toInt < 94)
         throwInvalidNettyVersion()
     } catch {
       case _: NumberFormatException =>
@@ -212,25 +214,26 @@ class NettyTransportSettings(config: Config) {
 private[netty] trait CommonHandlers extends NettyHelpers {
   protected val transport: NettyTransport
 
-  final override def onOpen(ctx: ChannelHandlerContext, e: ChannelStateEvent): Unit =
-    transport.channelGroup.add(e.getChannel)
+  override protected def onActive(ctx: ChannelHandlerContext): Unit = {
+    transport.channelGroup.add(ctx.channel())
+  }
 
   protected def createHandle(channel: Channel, localAddress: Address, remoteAddress: Address): AssociationHandle
 
   protected def registerListener(
       channel: Channel,
       listener: HandleEventListener,
-      msg: ChannelBuffer,
+      msg: ByteBuf,
       remoteSocketAddress: InetSocketAddress): Unit
 
   final protected def init(
       channel: Channel,
       remoteSocketAddress: SocketAddress,
       remoteAddress: Address,
-      msg: ChannelBuffer)(op: AssociationHandle => Any): Unit = {
+      msg: ByteBuf)(op: AssociationHandle => Any): Unit = {
     import transport._
     NettyTransport.addressFromSocketAddress(
-      channel.getLocalAddress,
+      channel.localAddress(),
       schemeIdentifier,
       system.name,
       Some(settings.Hostname),
@@ -238,8 +241,9 @@ private[netty] trait CommonHandlers extends NettyHelpers {
       case Some(localAddress) =>
         val handle = createHandle(channel, localAddress, remoteAddress)
         handle.readHandlerPromise.future.foreach { listener =>
+          // TODO use channel attr
           registerListener(channel, listener, msg, remoteSocketAddress.asInstanceOf[InetSocketAddress])
-          channel.setReadable(true)
+          channel.config().setAutoRead(true)
         }
         op(handle)
 
@@ -260,8 +264,8 @@ private[netty] abstract class ServerHandler(
 
   import transport.executionContext
 
-  final protected def initInbound(channel: Channel, remoteSocketAddress: SocketAddress, msg: ChannelBuffer): Unit = {
-    channel.setReadable(false)
+  final protected def initInbound(channel: Channel, remoteSocketAddress: SocketAddress, msg: ByteBuf): Unit = {
+    channel.config().setAutoRead(false)
     associationListenerFuture.foreach { listener =>
       val remoteAddress = NettyTransport
         .addressFromSocketAddress(
@@ -290,7 +294,7 @@ private[netty] abstract class ClientHandler(protected final val transport: Netty
   final protected val statusPromise = Promise[AssociationHandle]()
   def statusFuture = statusPromise.future
 
-  final protected def initOutbound(channel: Channel, remoteSocketAddress: SocketAddress, msg: ChannelBuffer): Unit = {
+  final protected def initOutbound(channel: Channel, remoteSocketAddress: SocketAddress, msg: ByteBuf): Unit = {
     init(channel, remoteSocketAddress, remoteAddress, msg)(statusPromise.success)
   }
 
@@ -302,11 +306,13 @@ private[netty] abstract class ClientHandler(protected final val transport: Netty
 private[transport] object NettyTransport {
   // 4 bytes will be used to represent the frame length. Used by netty LengthFieldPrepender downstream handler.
   val FrameLengthFieldLength = 4
+
   def gracefulClose(channel: Channel)(implicit ec: ExecutionContext): Unit = {
     @nowarn("msg=deprecated")
-    def always(c: ChannelFuture) = NettyFutureBridge(c).recover { case _ => c.getChannel }
+    def always(c: ChannelFuture) = NettyFutureBridge(c).recover { case _ => c.channel() }
+
     for {
-      _ <- always { channel.write(ChannelBuffers.buffer(0)) } // Force flush by waiting on a final dummy write
+      _ <- always { channel.writeAndFlush(Unpooled.EMPTY_BUFFER) } // Force flush by waiting on a final dummy write
       _ <- always { channel.disconnect() }
     } channel.close()
   }
@@ -358,13 +364,11 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
 
   private val log = Logging.withMarker(system, classOf[NettyTransport])
 
-  /**
-   * INTERNAL API
-   */
-  private[netty] final val udpConnectionTable = new ConcurrentHashMap[SocketAddress, HandleEventListener]()
+  private val clientEventLoopGroup = new NioEventLoopGroup()
 
-  private def createExecutorService() =
-    UseDispatcherForIo.map(system.dispatchers.lookup).getOrElse(Executors.newCachedThreadPool(system.threadFactory))
+  private val serverParentEventLoopGroup = new NioEventLoopGroup()
+
+  private val serverChildEventLoopGroup = new NioEventLoopGroup()
 
   /*
    * Be aware, that the close() method of DefaultChannelGroup is racy, because it uses an iterator over a ConcurrentHashMap.
@@ -373,26 +377,10 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
    * outbound connections are initiated in the shutdown phase.
    */
   val channelGroup = new DefaultChannelGroup(
-    "pekko-netty-transport-driver-channelgroup-" +
-    uniqueIdCounter.getAndIncrement)
+    "pekko-netty-transport-driver-channelgroup-" + uniqueIdCounter.getAndIncrement,
+    serverChildEventLoopGroup.next())
 
-  private val clientChannelFactory: ChannelFactory = {
-    val boss, worker = createExecutorService()
-    new NioClientSocketChannelFactory(
-      boss,
-      1,
-      new NioWorkerPool(worker, ClientSocketWorkerPoolSize),
-      new HashedWheelTimer(system.threadFactory))
-  }
-
-  private val serverChannelFactory: ChannelFactory = {
-    val boss, worker = createExecutorService()
-    // This does not create a HashedWheelTimer internally
-    new NioServerSocketChannelFactory(boss, worker, ServerSocketWorkerPoolSize)
-  }
-
-  private def newPipeline: DefaultChannelPipeline = {
-    val pipeline = new DefaultChannelPipeline
+  private def setupPipeline(pipeline: ChannelPipeline): ChannelPipeline = {
     pipeline.addLast(
       "FrameDecoder",
       new LengthFieldBasedFrameDecoder(
@@ -403,8 +391,6 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
         FrameLengthFieldLength, // Strip the header
         true))
     pipeline.addLast("FrameEncoder", new LengthFieldPrepender(FrameLengthFieldLength))
-
-    pipeline
   }
 
   private val associationListenerPromise: Promise[AssociationEventListener] = Promise()
@@ -426,7 +412,6 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
     sslEngineProvider match {
       case OptionVal.Some(sslProvider) =>
         val handler = NettySSLSupport(sslProvider, isClient)
-        handler.setCloseOnSSLException(true)
         handler
       case _ =>
         throw new IllegalStateException("Expected enable-ssl=on")
@@ -434,53 +419,67 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
 
   }
 
-  private val serverPipelineFactory: ChannelPipelineFactory = new ChannelPipelineFactory {
-    override def getPipeline: ChannelPipeline = {
-      val pipeline = newPipeline
+  private val serverChildChannelInitializer: ChannelInitializer[SocketChannel] = new ChannelInitializer[SocketChannel] {
+    override def initChannel(ch: SocketChannel): Unit = {
+      val pipeline = ch.pipeline()
+      setupPipeline(pipeline)
       if (EnableSsl) pipeline.addFirst("SslHandler", sslHandler(isClient = false))
       val handler = new TcpServerHandler(NettyTransport.this, associationListenerPromise.future, log)
       pipeline.addLast("ServerHandler", handler)
-      pipeline
     }
   }
 
-  private def clientPipelineFactory(remoteAddress: Address): ChannelPipelineFactory =
-    new ChannelPipelineFactory {
-      override def getPipeline: ChannelPipeline = {
-        val pipeline = newPipeline
+  private def clientChannelInitializer(remoteAddress: Address): ChannelInitializer[SocketChannel] =
+    new ChannelInitializer[SocketChannel] {
+      override def initChannel(ch: SocketChannel): Unit = {
+        val pipeline = ch.pipeline()
+        setupPipeline(pipeline)
         if (EnableSsl) pipeline.addFirst("SslHandler", sslHandler(isClient = true))
         val handler = new TcpClientHandler(NettyTransport.this, remoteAddress, log)
-        pipeline.addLast("clienthandler", handler)
-        pipeline
+        pipeline.addLast("clientHandler", handler)
       }
     }
 
-  private def setupBootstrap[B <: Bootstrap](bootstrap: B, pipelineFactory: ChannelPipelineFactory): B = {
-    bootstrap.setPipelineFactory(pipelineFactory)
-    bootstrap.setOption("backlog", settings.Backlog)
-    bootstrap.setOption("child.tcpNoDelay", settings.TcpNodelay)
-    bootstrap.setOption("child.keepAlive", settings.TcpKeepalive)
-    bootstrap.setOption("reuseAddress", settings.TcpReuseAddr)
-    settings.ReceiveBufferSize.foreach(sz => bootstrap.setOption("receiveBufferSize", sz))
-    settings.SendBufferSize.foreach(sz => bootstrap.setOption("sendBufferSize", sz))
-    settings.WriteBufferHighWaterMark.foreach(sz => bootstrap.setOption("writeBufferHighWaterMark", sz))
-    settings.WriteBufferLowWaterMark.foreach(sz => bootstrap.setOption("writeBufferLowWaterMark", sz))
+  private def setupBootstrap(bootstrap: Bootstrap, channelInitializer: ChannelInitializer[SocketChannel]): Bootstrap = {
+    bootstrap.handler(channelInitializer)
+    bootstrap.group(clientEventLoopGroup)
+    bootstrap.channel(classOf[NioSocketChannel])
+    bootstrap.option[java.lang.Boolean](ChannelOption.TCP_NODELAY, settings.TcpNodelay)
+    bootstrap.option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, settings.TcpKeepalive)
+    settings.ReceiveBufferSize.foreach(sz => bootstrap.option[java.lang.Integer](ChannelOption.SO_RCVBUF, sz))
+    settings.SendBufferSize.foreach(sz => bootstrap.option[java.lang.Integer](ChannelOption.SO_SNDBUF, sz))
+    settings.WriteBufferHighWaterMark.foreach(sz =>
+      bootstrap.option[java.lang.Integer](ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, sz))
+    settings.WriteBufferLowWaterMark.foreach(sz =>
+      bootstrap.option[java.lang.Integer](ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, sz))
+    bootstrap
+  }
+
+  private def setupBootstrap(
+      bootstrap: ServerBootstrap, channelInitializer: ChannelInitializer[SocketChannel]): ServerBootstrap = {
+    bootstrap.childHandler(channelInitializer)
+    bootstrap.group(serverParentEventLoopGroup, serverChildEventLoopGroup)
+    bootstrap.channel(classOf[NioServerSocketChannel])
+    bootstrap.option[java.lang.Integer](ChannelOption.SO_BACKLOG, settings.Backlog)
+    bootstrap.option[java.lang.Boolean](ChannelOption.SO_REUSEADDR, settings.TcpReuseAddr)
+    bootstrap.childOption[java.lang.Boolean](ChannelOption.TCP_NODELAY, settings.TcpNodelay)
+    bootstrap.childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, settings.TcpKeepalive)
+    settings.ReceiveBufferSize.foreach(sz => bootstrap.childOption[java.lang.Integer](ChannelOption.SO_RCVBUF, sz))
+    settings.SendBufferSize.foreach(sz => bootstrap.childOption[java.lang.Integer](ChannelOption.SO_SNDBUF, sz))
+    settings.WriteBufferHighWaterMark.foreach(sz =>
+      bootstrap.childOption[java.lang.Integer](ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, sz))
+    settings.WriteBufferLowWaterMark.foreach(sz =>
+      bootstrap.childOption[java.lang.Integer](ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, sz))
     bootstrap
   }
 
   private val inboundBootstrap: ServerBootstrap = {
-    setupBootstrap(new ServerBootstrap(serverChannelFactory), serverPipelineFactory)
+    setupBootstrap(new ServerBootstrap(), serverChildChannelInitializer)
   }
 
-  private def outboundBootstrap(remoteAddress: Address): ClientBootstrap = {
-    val bootstrap = setupBootstrap(new ClientBootstrap(clientChannelFactory), clientPipelineFactory(remoteAddress))
-    bootstrap.setOption("connectTimeoutMillis", settings.ConnectionTimeout.toMillis)
-    bootstrap.setOption("tcpNoDelay", settings.TcpNodelay)
-    bootstrap.setOption("keepAlive", settings.TcpKeepalive)
-    settings.ReceiveBufferSize.foreach(sz => bootstrap.setOption("receiveBufferSize", sz))
-    settings.SendBufferSize.foreach(sz => bootstrap.setOption("sendBufferSize", sz))
-    settings.WriteBufferHighWaterMark.foreach(sz => bootstrap.setOption("writeBufferHighWaterMark", sz))
-    settings.WriteBufferLowWaterMark.foreach(sz => bootstrap.setOption("writeBufferLowWaterMark", sz))
+  private def outboundBootstrap(remoteAddress: Address): Bootstrap = {
+    val bootstrap = setupBootstrap(new Bootstrap(), clientChannelInitializer(remoteAddress))
+    bootstrap.option[java.lang.Integer](ChannelOption.CONNECT_TIMEOUT_MILLIS, settings.ConnectionTimeout.toMillis.toInt)
     bootstrap
   }
 
@@ -501,10 +500,14 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
       address <- addressToSocketAddress(Address("", "", settings.BindHostname, bindPort))
     } yield {
       try {
-        val newServerChannel = inboundBootstrap.bind(address)
+        val newServerChannel = inboundBootstrap match {
+          case b: ServerBootstrap => b.bind(address).sync().channel()
+          case _                  => throw new IllegalStateException() // won't happen, compiler exhaustiveness check pleaser
+        }
 
         // Block reads until a handler actor is registered
-        newServerChannel.setReadable(false)
+        newServerChannel.config().setAutoRead(false)
+
         channelGroup.add(newServerChannel)
 
         serverChannel = newServerChannel
@@ -513,26 +516,26 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
         val port = if (settings.PortSelector == 0) None else Some(settings.PortSelector)
 
         addressFromSocketAddress(
-          newServerChannel.getLocalAddress,
+          newServerChannel.localAddress(),
           schemeIdentifier,
           system.name,
           Some(settings.Hostname),
           port) match {
           case Some(address) =>
-            addressFromSocketAddress(newServerChannel.getLocalAddress, schemeIdentifier, system.name, None,
+            addressFromSocketAddress(newServerChannel.localAddress, schemeIdentifier, system.name, None,
               None) match {
               case Some(address) => boundTo = address
               case None =>
                 throw new NettyTransportException(
-                  s"Unknown local address type [${newServerChannel.getLocalAddress.getClass.getName}]")
+                  s"Unknown local address type [${newServerChannel.localAddress.getClass.getName}]")
             }
             associationListenerPromise.future.foreach { _ =>
-              newServerChannel.setReadable(true)
+              newServerChannel.config().setAutoRead(true)
             }
             (address, associationListenerPromise)
           case None =>
             throw new NettyTransportException(
-              s"Unknown local address type [${newServerChannel.getLocalAddress.getClass.getName}]")
+              s"Unknown local address type [${newServerChannel.localAddress.getClass.getName}]")
         }
       } catch {
         case NonFatal(e) => {
@@ -550,21 +553,21 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
   private[pekko] def boundAddress = boundTo
 
   override def associate(remoteAddress: Address): Future[AssociationHandle] = {
-    if (!serverChannel.isBound) Future.failed(new NettyTransportException("Transport is not bound"))
+    if (!serverChannel.isActive) Future.failed(new NettyTransportException("Transport is not bound"))
     else {
-      val bootstrap: ClientBootstrap = outboundBootstrap(remoteAddress)
+      val bootstrap: Bootstrap = outboundBootstrap(remoteAddress)
 
       (for {
         socketAddress <- addressToSocketAddress(remoteAddress)
         readyChannel <- NettyFutureBridge(bootstrap.connect(socketAddress)).map { channel =>
           if (EnableSsl)
             blocking {
-              channel.getPipeline.get(classOf[SslHandler]).handshake().awaitUninterruptibly()
+              channel.pipeline().get(classOf[SslHandler]).renegotiate().awaitUninterruptibly()
             }
-          channel.setReadable(false)
+          channel.config().setAutoRead(false)
           channel
         }
-        handle <- readyChannel.getPipeline.get(classOf[ClientHandler]).statusFuture
+        handle <- readyChannel.pipeline().get(classOf[ClientHandler]).statusFuture
       } yield handle).recover {
         case _: CancellationException => throw new NettyTransportExceptionNoStack("Connection was cancelled")
         case NonFatal(t) =>
@@ -581,22 +584,17 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
   }
 
   override def shutdown(): Future[Boolean] = {
-    def always(c: ChannelGroupFuture) = NettyFutureBridge(c).map(_ => true).recover { case _ => false }
+    def always(c: ChannelGroupFuture): Future[Boolean] = NettyFutureBridge(c).map(_ => true).recover { case _ => false }
     for {
       // Force flush by trying to write an empty buffer and wait for success
-      unbindStatus <- always(channelGroup.unbind())
-      lastWriteStatus <- always(channelGroup.write(ChannelBuffers.buffer(0)))
+      unbindStatus <- always { channelGroup.close(ChannelMatchers.isServerChannel) }
+      lastWriteStatus <- always(channelGroup.writeAndFlush(Unpooled.EMPTY_BUFFER))
       disconnectStatus <- always(channelGroup.disconnect())
       closeStatus <- always(channelGroup.close())
     } yield {
-      // Release the selectors, but don't try to kill the dispatcher
-      if (UseDispatcherForIo.isDefined) {
-        clientChannelFactory.shutdown()
-        serverChannelFactory.shutdown()
-      } else {
-        clientChannelFactory.releaseExternalResources()
-        serverChannelFactory.releaseExternalResources()
-      }
+      serverParentEventLoopGroup.shutdownGracefully()
+      serverChildEventLoopGroup.shutdownGracefully()
+      clientEventLoopGroup.shutdownGracefully()
       lastWriteStatus && unbindStatus && disconnectStatus && closeStatus
     }
 

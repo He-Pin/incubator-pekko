@@ -34,7 +34,7 @@ import io.netty.util.{ AttributeKey, ReferenceCountUtil }
  * INTERNAL API
  */
 private[remote] object TcpHandlers {
-  private val LISTENER = AttributeKey.valueOf[Option[HandleEventListener]]("HandleEventListener")
+  private val LISTENER = AttributeKey.valueOf[HandleEventListener]("HandleEventListener")
 }
 
 /**
@@ -50,14 +50,13 @@ private[remote] trait TcpHandlers extends CommonHandlers {
       listener: HandleEventListener,
       msg: ByteBuf,
       remoteSocketAddress: InetSocketAddress): Unit = {
-    channel.attr(LISTENER).set(Some(listener))
+    channel.attr(LISTENER).set(listener)
   }
 
   override def createHandle(channel: Channel, localAddress: Address, remoteAddress: Address): AssociationHandle =
     new TcpAssociationHandle(localAddress, remoteAddress, transport, channel)
 
   override protected def onInactive(ctx: ChannelHandlerContext): Unit = {
-    super.onInactive(ctx)
     val channel = ctx.channel()
     notifyListener(channel, Disassociated(AssociationHandle.Unknown))
     log.debug("Remote connection to [{}] was disconnected because of channel inactive.", channel.remoteAddress())
@@ -73,7 +72,6 @@ private[remote] trait TcpHandlers extends CommonHandlers {
   }
 
   override protected def onException(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-    super.onException(ctx, cause)
     val channel = ctx.channel()
     notifyListener(channel, Disassociated(AssociationHandle.Unknown))
     log.warning("Remote connection to [{}] failed with {}", channel.remoteAddress(), cause)
@@ -82,7 +80,11 @@ private[remote] trait TcpHandlers extends CommonHandlers {
 
   private def notifyListener(channel: Channel, msg: HandleEvent): Unit = {
     val listener = channel.attr(LISTENER).get()
-    listener.foreach(_.notify(msg))
+    if (listener ne null) {
+      listener.notify(msg)
+    } else {
+      throw new IllegalStateException("~~~~")
+    }
   }
 
 }
@@ -99,7 +101,6 @@ private[remote] class TcpServerHandler(
     with TcpHandlers {
 
   override def onActive(ctx: ChannelHandlerContext): Unit = {
-    super.onActive(ctx)
     val channel = ctx.channel()
     initInbound(channel, channel.remoteAddress(), null)
   }
@@ -114,7 +115,6 @@ private[remote] class TcpClientHandler(_transport: NettyTransport, remoteAddress
     with TcpHandlers {
 
   override def onActive(ctx: ChannelHandlerContext): Unit = {
-    super.onActive(ctx)
     val channel = ctx.channel()
     initOutbound(channel, channel.remoteAddress(), null)
   }

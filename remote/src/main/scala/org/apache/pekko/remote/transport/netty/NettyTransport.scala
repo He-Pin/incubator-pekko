@@ -241,9 +241,9 @@ private[netty] trait CommonHandlers extends NettyHelpers {
       case Some(localAddress) =>
         val handle = createHandle(channel, localAddress, remoteAddress)
         handle.readHandlerPromise.future.foreach { listener =>
-          // TODO use channel attr
           registerListener(channel, listener, msg, remoteSocketAddress.asInstanceOf[InetSocketAddress])
           channel.config().setAutoRead(true)
+          channel.read()
         }
         op(handle)
 
@@ -439,6 +439,7 @@ class NettyTransport(val settings: NettyTransportSettings, val system: ExtendedA
         pipeline.addLast("clientHandler", handler)
       }
     }
+
 
   private def setupBootstrap(bootstrap: Bootstrap, channelInitializer: ChannelInitializer[SocketChannel]): Bootstrap = {
     bootstrap.handler(channelInitializer)

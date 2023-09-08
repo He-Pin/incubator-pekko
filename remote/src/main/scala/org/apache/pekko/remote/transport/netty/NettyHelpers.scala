@@ -37,11 +37,11 @@ private[netty] trait NettyHelpers {
 
   protected def onException(@unused ctx: ChannelHandlerContext, @unused cause: Throwable): Unit = ()
 
-  final protected def transformException(ctx: ChannelHandlerContext, exception: Throwable): Unit = {
-    val cause = if (exception.getCause ne null) exception.getCause else new PekkoException("Unknown cause")
+  final protected def transformException(ctx: ChannelHandlerContext, ex: Throwable): Unit = {
+    val cause = if (ex.getCause ne null) ex.getCause else new PekkoException("Unknown cause")
     cause match {
       case _: ClosedChannelException => // Ignore
-      case null | NonFatal(_)        => onException(ctx, exception)
+      case null | NonFatal(_)        => onException(ctx, ex)
       case e: Throwable              => throw e // Rethrow fatals
     }
   }

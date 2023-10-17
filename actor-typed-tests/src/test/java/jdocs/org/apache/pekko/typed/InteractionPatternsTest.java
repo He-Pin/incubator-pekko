@@ -33,8 +33,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 
+// format: off
 import static jdocs.org.apache.pekko.typed.InteractionPatternsTest.Samples.*;
 import static org.junit.Assert.assertEquals;
+// format: on
 
 public class InteractionPatternsTest extends JUnitSuite {
 

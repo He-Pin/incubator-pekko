@@ -13,6 +13,14 @@
 
 package org.apache.pekko.actor.typed.javadsl;
 
+import static org.hamcrest.CoreMatchers.startsWith;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertEquals;
+
+import com.typesafe.config.ConfigFactory;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import org.apache.pekko.actor.testkit.typed.javadsl.LogCapturing;
 import org.apache.pekko.actor.testkit.typed.javadsl.LoggingTestKit;
 import org.apache.pekko.actor.testkit.typed.javadsl.TestKitJunitResource;
@@ -20,18 +28,10 @@ import org.apache.pekko.actor.testkit.typed.javadsl.TestProbe;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.Props;
-import com.typesafe.config.ConfigFactory;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.scalatestplus.junit.JUnitSuite;
-
-import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-
-import static org.hamcrest.CoreMatchers.startsWith;
-import static org.junit.Assert.*;
 
 public final class ActorContextPipeToSelfTest extends JUnitSuite {
 

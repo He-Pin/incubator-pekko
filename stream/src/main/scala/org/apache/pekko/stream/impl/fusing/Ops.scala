@@ -2225,8 +2225,6 @@ private[pekko] final class StatefulMap[S, In, Out](create: () => S, f: (S, In) =
   private val out = Outlet[Out]("StatefulMap.out")
   override val shape: FlowShape[In, Out] = FlowShape(in, out)
 
-  override protected def initialAttributes: Attributes = DefaultAttributes.statefulMap and SourceLocation.forLambda(f)
-
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler {
       lazy val decider: Decider = inheritedAttributes.mandatoryAttribute[SupervisionStrategy].decider

@@ -1081,8 +1081,10 @@ trait FlowOps[+Out, +Mat] {
    * @param f a function that transforms the upstream element and the state into a pair of next state and output element
    * @param onComplete a function that transforms the ongoing state into an optional output element
    */
-  def statefulMap[S, T](create: () => S)(f: (S, Out) => (S, T), onComplete: S => Option[T]): Repr[T] =
+  def statefulMap[S, T](create: () => S)(f: (S, Out) => (S, T), onComplete: S => Option[T]): Repr[T] = {
     via(new StatefulMap[S, Out, T](create, f, onComplete))
+      .withAttributes(DefaultAttributes.statefulMap and SourceLocation.forLambda(f))
+  }
 
   /**
    * Transform each input element into an `Iterable` of output elements that is

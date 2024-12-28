@@ -26,7 +26,7 @@ import pekko.remote.transport.AssociationHandle.{ Disassociated, HandleEvent, Ha
 import pekko.remote.transport.Transport.AssociationEventListener
 import pekko.util.ByteString
 
-import io.netty.buffer.{ ByteBuf, ByteBufUtil, Unpooled }
+import io.netty.buffer.{ ByteBuf, Unpooled }
 import io.netty.channel.{ Channel, ChannelHandlerContext }
 import io.netty.util.AttributeKey
 
@@ -56,7 +56,8 @@ private[remote] trait TcpHandlers extends CommonHandlers {
   }
 
   override def onMessage(ctx: ChannelHandlerContext, msg: ByteBuf): Unit = {
-    val bytes: Array[Byte] = ByteBufUtil.getBytes(msg)
+    val bytes = new Array[Byte](msg.readableBytes())
+    msg.readBytes(bytes)
     if (bytes.length > 0) notifyListener(ctx.channel(), InboundPayload(ByteString(bytes)))
   }
 

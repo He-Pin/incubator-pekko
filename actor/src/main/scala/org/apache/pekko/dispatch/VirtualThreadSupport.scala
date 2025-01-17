@@ -17,8 +17,9 @@
 
 package org.apache.pekko.dispatch
 
-import org.apache.pekko.annotation.InternalApi
-import org.apache.pekko.util.JavaVersion
+import org.apache.pekko
+import pekko.annotation.InternalApi
+import pekko.util.JavaVersion
 
 import java.lang.invoke.{ MethodHandles, MethodType }
 import java.util.concurrent.{ ExecutorService, ForkJoinPool, ThreadFactory }
@@ -34,8 +35,21 @@ private[dispatch] object VirtualThreadSupport {
   val isSupported: Boolean = JavaVersion.majorVersion >= 21
 
   /**
-   * Create a virtual thread factory with a executor, the executor will be used as the scheduler of
+   * Create a virtual thread factory with given executor, the executor will be used as the scheduler of
    * virtual thread.
+   *
+   * The executor should run task on platform threads.
+   *
+   * returns null if not supported.
+   */
+  def newThreadPerTaskExecutor(prefix: String, executor: ExecutorService): ExecutorService = {
+    require(isSupported, "Virtual thread is not supported.")
+    val factory = virtualThreadFactory(prefix, executor)
+    newThreadPerTaskExecutor(factory)
+  }
+
+  /**
+   * Create a virtual thread factory with the default Virtual Thread executor.
    */
   def newVirtualThreadFactory(prefix: String): ThreadFactory = {
     require(isSupported, "Virtual thread is not supported.")
@@ -88,6 +102,29 @@ private[dispatch] object VirtualThreadSupport {
       case NonFatal(e) =>
         // --add-opens java.base/java.lang=ALL-UNNAMED
         throw new UnsupportedOperationException("Failed to create newThreadPerTaskExecutor.", e)
+    }
+
+  private def virtualThreadFactory(prefix: String, executor: ExecutorService): ThreadFactory =
+    try {
+      val builderClass = ClassLoader.getSystemClassLoader.loadClass("java.lang.Thread$Builder")
+      val ofVirtualClass = ClassLoader.getSystemClassLoader.loadClass("java.lang.Thread$Builder$OfVirtual")
+      val ofVirtualMethod = classOf[Thread].getDeclaredMethod("ofVirtual")
+      var builder = ofVirtualMethod.invoke(null)
+      if (executor != null) {
+        val clazz = builder.getClass
+        val field = clazz.getDeclaredField("scheduler")
+        field.setAccessible(true)
+        field.set(builder, executor)
+      }
+      val nameMethod = ofVirtualClass.getDeclaredMethod("name", classOf[String], classOf[Long])
+      val factoryMethod = builderClass.getDeclaredMethod("factory")
+      val zero = java.lang.Long.valueOf(0L)
+      builder = nameMethod.invoke(builder, prefix + "-virtual-thread-", zero)
+      factoryMethod.invoke(builder).asInstanceOf[ThreadFactory]
+    } catch {
+      case NonFatal(e) =>
+        // --add-opens java.base/java.lang=ALL-UNNAMED
+        throw new UnsupportedOperationException("Failed to create virtual thread factory", e)
     }
 
 }

@@ -86,15 +86,28 @@ class ForkJoinExecutorConfigurator(config: Config, prerequisites: DispatcherPrer
   }
 
   class ForkJoinExecutorServiceFactory(
+      val id: String,
       val threadFactory: ForkJoinPool.ForkJoinWorkerThreadFactory,
       val parallelism: Int,
       val asyncMode: Boolean,
-      val maxPoolSize: Int)
+      val maxPoolSize: Int,
+      val virtualize: Boolean)
       extends ExecutorServiceFactory {
+    def this(threadFactory: ForkJoinPool.ForkJoinWorkerThreadFactory,
+        parallelism: Int,
+        asyncMode: Boolean,
+        maxPoolSize: Int,
+        virtualize: Boolean) =
+      this(null, threadFactory, parallelism, asyncMode, maxPoolSize, virtualize)
 
     def this(threadFactory: ForkJoinPool.ForkJoinWorkerThreadFactory,
         parallelism: Int,
-        asyncMode: Boolean) = this(threadFactory, parallelism, asyncMode, ForkJoinPoolConstants.MaxCap)
+        asyncMode: Boolean) = this(threadFactory, parallelism, asyncMode, ForkJoinPoolConstants.MaxCap, false)
+
+    def this(threadFactory: ForkJoinPool.ForkJoinWorkerThreadFactory,
+        parallelism: Int,
+        asyncMode: Boolean,
+        maxPoolSize: Int) = this(threadFactory, parallelism, asyncMode, maxPoolSize, false)
 
     private def pekkoJdk9ForkJoinPoolClassOpt: Option[Class[_]] =
       Try(Class.forName("org.apache.pekko.dispatch.PekkoJdk9ForkJoinPool")).toOption
@@ -116,12 +129,23 @@ class ForkJoinExecutorConfigurator(config: Config, prerequisites: DispatcherPrer
     def this(threadFactory: ForkJoinPool.ForkJoinWorkerThreadFactory, parallelism: Int) =
       this(threadFactory, parallelism, asyncMode = true)
 
-    def createExecutorService: ExecutorService = pekkoJdk9ForkJoinPoolHandleOpt match {
-      case Some(handle) =>
-        handle.invoke(parallelism, threadFactory, maxPoolSize,
-          MonitorableThreadFactory.doNothing, asyncMode).asInstanceOf[ExecutorService]
-      case _ =>
-        new PekkoForkJoinPool(parallelism, threadFactory, MonitorableThreadFactory.doNothing, asyncMode)
+    def createExecutorService: ExecutorService = {
+      val pool = pekkoJdk9ForkJoinPoolHandleOpt match {
+        case Some(handle) =>
+          handle.invoke(parallelism, threadFactory, maxPoolSize,
+            MonitorableThreadFactory.doNothing, asyncMode).asInstanceOf[ExecutorService with LoadMetrics]
+        case _ =>
+          new PekkoForkJoinPool(parallelism, threadFactory, MonitorableThreadFactory.doNothing, asyncMode)
+      }
+      if (virtualize) {
+        new VirtualizedExecutorService(
+          id,
+          pool,
+          _ => pool.atFullThrottle(),
+          cascadeShutdown = true)
+      } else {
+        pool
+      }
     }
   }
 
@@ -143,12 +167,14 @@ class ForkJoinExecutorConfigurator(config: Config, prerequisites: DispatcherPrer
     }
 
     new ForkJoinExecutorServiceFactory(
+      id,
       validate(tf),
       ThreadPoolConfig.scaledPoolSize(
         config.getInt("parallelism-min"),
         config.getDouble("parallelism-factor"),
         config.getInt("parallelism-max")),
       asyncMode,
-      config.getInt("maximum-pool-size"))
+      config.getInt("maximum-pool-size"),
+      config.getBoolean("virtualize"))
   }
 }

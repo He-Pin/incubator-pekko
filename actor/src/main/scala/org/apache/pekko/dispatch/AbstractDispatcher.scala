@@ -426,11 +426,18 @@ final class VirtualThreadExecutorConfigurator(config: Config, prerequisites: Dis
             vt
           }
         }
-      case _ => VirtualThreadSupport.newVirtualThreadFactory(prerequisites.settings.name + "-" + id);
+      case _ => newVirtualThreadFactory(prerequisites.settings.name + "-" + id);
     }
     new ExecutorServiceFactory {
-      import VirtualThreadSupport._
-      override def createExecutorService: ExecutorService = newThreadPerTaskExecutor(tf)
+      override def createExecutorService: ExecutorService with LoadMetrics = {
+        val pool = getVirtualThreadDefaultScheduler // the default scheduler of virtual thread
+        new VirtualizedExecutorService(
+          tf,
+          pool, // the default scheduler of virtual thread
+          loadMetricsProvider = _ => pool.getActiveThreadCount >= pool.getParallelism,
+          cascadeShutdown = false // we don't want to cascade shutdown the default virtual thread scheduler
+        )
+      }
     }
   }
 }

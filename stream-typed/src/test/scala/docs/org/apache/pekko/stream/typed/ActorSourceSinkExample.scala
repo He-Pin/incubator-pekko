@@ -71,7 +71,7 @@ object ActorSourceSinkExample {
       sealed trait Event
       case class Element(content: String) extends Event
       case object ReachedEnd extends Event
-      case class FailureOccured(ex: Exception) extends Event
+      case class FailureOccurred(ex: Exception) extends Event
 
       def apply(): Behavior[Emitted.type] =
         Behaviors.setup { context =>
@@ -91,7 +91,7 @@ object ActorSourceSinkExample {
               case ReachedEnd => CompletionStrategy.draining
             },
             failureMatcher = {
-              case FailureOccured(ex) => ex
+              case FailureOccurred(ex) => ex
             })
 
         val streamActor: ActorRef[Event] = source

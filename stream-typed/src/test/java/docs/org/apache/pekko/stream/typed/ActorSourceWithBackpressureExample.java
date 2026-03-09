@@ -52,10 +52,10 @@ class StreamFeeder extends AbstractBehavior<StreamFeeder.Emitted> {
     INSTANCE;
   }
 
-  public static class FailureOccured implements Event {
+  public static class FailureOccurred implements Event {
     public final Exception ex;
 
-    public FailureOccured(Exception ex) {
+    public FailureOccurred(Exception ex) {
       this.ex = ex;
     }
   }
@@ -89,7 +89,7 @@ class StreamFeeder extends AbstractBehavior<StreamFeeder.Emitted> {
               else return Optional.empty();
             },
             (msg) -> {
-              if (msg instanceof FailureOccured failure) return Optional.of(failure.ex);
+              if (msg instanceof FailureOccurred failure) return Optional.of(failure.ex);
               else return Optional.empty();
             });
 

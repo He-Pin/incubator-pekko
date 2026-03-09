@@ -145,7 +145,7 @@ sealed trait InMemStorage[K, R] extends InternalReprSupport[R] {
     read(key)
       .getOrElse(Vector.empty)
       .dropWhile(reprToSeqNum(_) < fromInclusive)
-      // we dont need to read highestSeqNumber because it will in any case stop at it if toInclusive > highestSeqNumber
+      // we don't need to read highestSeqNumber because it will in any case stop at it if toInclusive > highestSeqNumber
       .takeWhile(reprToSeqNum(_) <= toInclusive)
       .take(if (maxNumber > Int.MaxValue) Int.MaxValue else maxNumber.toInt)
   }

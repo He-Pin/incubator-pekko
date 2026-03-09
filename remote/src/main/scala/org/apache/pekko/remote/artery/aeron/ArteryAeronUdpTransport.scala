@@ -207,7 +207,7 @@ private[remote] class ArteryAeronUdpTransport(_system: ExtendedActorSystem, _pro
     })
 
     ctx.errorHandler(new ErrorHandler {
-      private val fatalErrorOccured = new AtomicBoolean
+      private val fatalErrorOccurred = new AtomicBoolean
 
       override def onError(cause: Throwable): Unit = {
         cause match {
@@ -220,7 +220,7 @@ private[remote] class ArteryAeronUdpTransport(_system: ExtendedActorSystem, _pro
       }
 
       private def handleFatalError(cause: Throwable): Unit = {
-        if (fatalErrorOccured.compareAndSet(false, true)) {
+        if (fatalErrorOccurred.compareAndSet(false, true)) {
           if (!isShutdown) {
             log.error(
               cause,

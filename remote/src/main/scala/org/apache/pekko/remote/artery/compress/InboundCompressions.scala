@@ -182,7 +182,7 @@ private[remote] final class InboundCompressionsImpl(
  *
  * The outbound context is available by looking it up in the association.
  * It can be used to advertise a compression table.
- * If the association is not complete - we simply don't advertise the table, which is fine (handshake not yet complete).
+ * If the association is not complete - we simply dont advertise the table, which is fine (handshake not yet complete).
  */
 private[remote] final class InboundActorRefCompression(
     log: LoggingAdapter,

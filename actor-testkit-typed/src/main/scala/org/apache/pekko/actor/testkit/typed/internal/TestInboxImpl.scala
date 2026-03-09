@@ -98,8 +98,8 @@ private[pekko] final class ReplyInboxImpl[T](private var underlying: OptionVal[T
   def expectReply(expectedReply: T): Unit =
     receiveReply() match {
       case matches if matches == expectedReply => ()
-      case doesNotMatch                         =>
-        throw new AssertionError(s"Expected $expectedReply but received $doesNotMatch")
+      case doesntMatch                         =>
+        throw new AssertionError(s"Expected $expectedReply but received $doesntMatch")
     }
 
   def expectNoReply(): ReplyInboxImpl[T] =
@@ -153,15 +153,15 @@ private[pekko] final class StatusReplyInboxImpl[T](private var underlying: Optio
   def expectValue(expectedValue: T): Unit =
     receiveValue() match {
       case matches if matches == expectedValue => ()
-      case doesNotMatch                         =>
-        throw new AssertionError(s"Expected $expectedValue but received $doesNotMatch")
+      case doesntMatch                         =>
+        throw new AssertionError(s"Expected $expectedValue but received $doesntMatch")
     }
 
   def expectErrorMessage(errorMessage: String): Unit =
     receiveError() match {
       case matches if matches.getMessage == errorMessage => ()
-      case doesNotMatch                                   =>
-        throw new AssertionError(s"Expected a throwable with message $errorMessage, but got ${doesNotMatch.getMessage}")
+      case doesntMatch                                   =>
+        throw new AssertionError(s"Expected a throwable with message $errorMessage, but got ${doesntMatch.getMessage}")
     }
 
   def expectNoReply(): StatusReplyInboxImpl[T] =

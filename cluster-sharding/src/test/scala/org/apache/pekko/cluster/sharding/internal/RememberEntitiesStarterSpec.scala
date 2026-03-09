@@ -146,25 +146,25 @@ class RememberEntitiesStarterSpec extends PekkoSpec {
         RememberEntityStarter
           .props(regionProbe.ref, shardProbe.ref, shardId, Set("1", "2", "3", "4", "5"), customSettings))
 
-      def recieveStartAndAck() = {
+      def receiveStartAndAck() = {
         val start = regionProbe.expectMsgType[ShardRegion.StartEntity]
         regionProbe.lastSender ! ShardRegion.StartEntityAck(start.entityId, shardId)
       }
 
       watch(rememberEntityStarter)
       // first batch should be immediate
-      recieveStartAndAck()
-      recieveStartAndAck()
+      receiveStartAndAck()
+      receiveStartAndAck()
       // second batch holding off (with some room for unstable test env)
       regionProbe.expectNoMessage(600.millis)
 
       // second batch should be immediate
-      recieveStartAndAck()
-      recieveStartAndAck()
+      receiveStartAndAck()
+      receiveStartAndAck()
       // third batch holding off
       regionProbe.expectNoMessage(600.millis)
 
-      recieveStartAndAck()
+      receiveStartAndAck()
 
       // the starter should then stop itself, not sending anything more to the shard or region
       expectTerminated(rememberEntityStarter)

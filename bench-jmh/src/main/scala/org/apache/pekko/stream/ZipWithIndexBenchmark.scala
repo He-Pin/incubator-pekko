@@ -28,8 +28,7 @@ import org.openjdk.jmh.annotations._
 
 import org.apache.pekko
 import pekko.actor.ActorSystem
-import pekko.stream.scaladsl._
-import pekko.stream.scaladsl.{ GatherCollector, Gatherer, OneToOneGatherer }
+import pekko.stream.scaladsl.{ GatherCollector, Gatherer, Keep, OneToOneGatherer, Sink, Source }
 
 import com.typesafe.config.ConfigFactory
 
@@ -77,25 +76,34 @@ class ZipWithIndexBenchmark {
     }
     .toMat(Sink.ignore)(Keep.right)
 
-  private val gatherZipWithIndex = Source
+  private val statefulMapZipWithIndex = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .statefulMap(() => 0L)((index, elem) => (index + 1, (elem, index)), _ => None)
+    .toMat(Sink.ignore)(Keep.right)
+
+  private val gatherPublicZipWithIndex = Source
     .repeat(1)
     .take(OperationsPerInvocation)
     .gather(() =>
       new Gatherer[Int, (Int, Long)] {
-        private var index: Long = 0L
+        private var index = 0L
+
         override def apply(elem: Int, collector: GatherCollector[(Int, Long)]): Unit = {
-          collector.push((elem, index))
+          val zipped = (elem, index)
           index += 1
+          collector.push(zipped)
         }
       })
     .toMat(Sink.ignore)(Keep.right)
 
-  private val gatherOneToOneZipWithIndex = Source
+  private val gatherInternalOneToOneZipWithIndex = Source
     .repeat(1)
     .take(OperationsPerInvocation)
     .gather(() =>
       new OneToOneGatherer[Int, (Int, Long)] {
-        private var index: Long = 0L
+        private var index = 0L
+
         override def applyOne(elem: Int): (Int, Long) = {
           val zipped = (elem, index)
           index += 1
@@ -104,15 +112,66 @@ class ZipWithIndexBenchmark {
       })
     .toMat(Sink.ignore)(Keep.right)
 
-  @Benchmark
-  @OperationsPerInvocation(OperationsPerInvocation)
-  def benchGatherZipWithIndex(): Unit =
-    Await.result(gatherZipWithIndex.run(), Duration.Inf)
+  private val statefulMapIncrement = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .statefulMap(() => ())((state, elem) => (state, elem + 1), _ => None)
+    .toMat(Sink.ignore)(Keep.right)
 
-  @Benchmark
-  @OperationsPerInvocation(OperationsPerInvocation)
-  def benchGatherOneToOneZipWithIndex(): Unit =
-    Await.result(gatherOneToOneZipWithIndex.run(), Duration.Inf)
+  private val gatherPublicIncrement = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .gather(() =>
+      new Gatherer[Int, Int] {
+        override def apply(elem: Int, collector: GatherCollector[Int]): Unit =
+          collector.push(elem + 1)
+      })
+    .toMat(Sink.ignore)(Keep.right)
+
+  private val gatherInternalOneToOneIncrement = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .gather(() =>
+      new OneToOneGatherer[Int, Int] {
+        override def applyOne(elem: Int): Int = elem + 1
+      })
+    .toMat(Sink.ignore)(Keep.right)
+
+  private val statefulMapCountedIncrement = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .statefulMap(() => 0L)((index, elem) => (index + 1, elem + index.toInt), _ => None)
+    .toMat(Sink.ignore)(Keep.right)
+
+  private val gatherPublicCountedIncrement = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .gather(() =>
+      new Gatherer[Int, Int] {
+        private var index = 0L
+
+        override def apply(elem: Int, collector: GatherCollector[Int]): Unit = {
+          val incremented = elem + index.toInt
+          index += 1
+          collector.push(incremented)
+        }
+      })
+    .toMat(Sink.ignore)(Keep.right)
+
+  private val gatherInternalOneToOneCountedIncrement = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .gather(() =>
+      new OneToOneGatherer[Int, Int] {
+        private var index = 0L
+
+        override def applyOne(elem: Int): Int = {
+          val incremented = elem + index.toInt
+          index += 1
+          incremented
+        }
+      })
+    .toMat(Sink.ignore)(Keep.right)
 
   @Benchmark
   @OperationsPerInvocation(OperationsPerInvocation)
@@ -123,5 +182,50 @@ class ZipWithIndexBenchmark {
   @OperationsPerInvocation(OperationsPerInvocation)
   def benchNewZipWithIndex(): Unit =
     Await.result(newZipWithIndex.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchStatefulMapZipWithIndex(): Unit =
+    Await.result(statefulMapZipWithIndex.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherPublicZipWithIndex(): Unit =
+    Await.result(gatherPublicZipWithIndex.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherInternalOneToOneZipWithIndex(): Unit =
+    Await.result(gatherInternalOneToOneZipWithIndex.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchStatefulMapIncrement(): Unit =
+    Await.result(statefulMapIncrement.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherPublicIncrement(): Unit =
+    Await.result(gatherPublicIncrement.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherInternalOneToOneIncrement(): Unit =
+    Await.result(gatherInternalOneToOneIncrement.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchStatefulMapCountedIncrement(): Unit =
+    Await.result(statefulMapCountedIncrement.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherPublicCountedIncrement(): Unit =
+    Await.result(gatherPublicCountedIncrement.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherInternalOneToOneCountedIncrement(): Unit =
+    Await.result(gatherInternalOneToOneCountedIncrement.run(), Duration.Inf)
 
 }

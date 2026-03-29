@@ -36,21 +36,21 @@ public class Gather {
     Source.from(Arrays.asList("A", "B", "C", "D"))
         .gather(
             () ->
-                new Gatherer<String, Object>() {
+                new Gatherer<String, String>() {
                   private long index = 0L;
 
                   @Override
-                  public void apply(String elem, GatherCollector<Object> collector) {
-                    collector.apply(new Object[] { elem, index });
+                  public void apply(String elem, GatherCollector<String> collector) {
+                    collector.push("(" + elem + "," + index + ")");
                     index += 1;
                   }
                 })
         .runWith(Sink.foreach(System.out::println), system);
     // prints
-    // [A, 0]
-    // [B, 1]
-    // [C, 2]
-    // [D, 3]
+    // (A,0)
+    // (B,1)
+    // (C,2)
+    // (D,3)
     // #zipWithIndex
   }
 

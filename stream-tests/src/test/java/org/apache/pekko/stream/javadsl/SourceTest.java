@@ -40,6 +40,8 @@ import org.apache.pekko.japi.function.*;
 import org.apache.pekko.japi.pf.PFBuilder;
 // #imports
 import org.apache.pekko.stream.*;
+import org.apache.pekko.stream.javadsl.GatherCollector;
+import org.apache.pekko.stream.javadsl.Gatherer;
 // #imports
 import org.apache.pekko.stream.scaladsl.FlowSpec;
 import org.apache.pekko.stream.stage.AbstractInHandler;
@@ -933,6 +935,46 @@ public class SourceTest extends StreamTest {
         .expectNext("1", "2", "3", "end")
         .expectComplete();
     Assert.assertFalse(gate.get());
+  }
+
+  @Test
+  public void mustBeAbleToUseGather() throws Exception {
+    final List<String> result =
+        Source.from(Arrays.asList("A", "B", "C"))
+            .gather(
+                () ->
+                    (elem, collector) -> collector.apply(elem))
+            .runWith(Sink.seq(), system)
+            .toCompletableFuture()
+            .get(3, TimeUnit.SECONDS);
+    Assert.assertEquals(Arrays.asList("A", "B", "C"), result);
+  }
+
+  @Test
+  public void mustBeAbleToUseGatherWithOnComplete() throws Exception {
+    final List<String> result =
+        Source.from(Arrays.asList("A", "B", "C"))
+            .gather(
+                () ->
+                    new Gatherer<String, String>() {
+                      private final List<String> buffer = new ArrayList<>();
+
+                      @Override
+                      public void apply(String elem, GatherCollector<String> collector) {
+                        buffer.add(elem);
+                      }
+
+                      @Override
+                      public void onComplete(GatherCollector<String> collector) {
+                        for (String s : buffer) {
+                          collector.apply(s);
+                        }
+                      }
+                    })
+            .runWith(Sink.seq(), system)
+            .toCompletableFuture()
+            .get(3, TimeUnit.SECONDS);
+    Assert.assertEquals(Arrays.asList("A", "B", "C"), result);
   }
 
   @Test

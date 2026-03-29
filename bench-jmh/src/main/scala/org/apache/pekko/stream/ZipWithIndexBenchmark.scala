@@ -29,6 +29,7 @@ import org.openjdk.jmh.annotations._
 import org.apache.pekko
 import pekko.actor.ActorSystem
 import pekko.stream.scaladsl._
+import pekko.stream.scaladsl.{ GatherCollector, Gatherer, OneToOneGatherer }
 
 import com.typesafe.config.ConfigFactory
 
@@ -75,6 +76,43 @@ class ZipWithIndexBenchmark {
       }
     }
     .toMat(Sink.ignore)(Keep.right)
+
+  private val gatherZipWithIndex = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .gather(() =>
+      new Gatherer[Int, (Int, Long)] {
+        private var index: Long = 0L
+        override def apply(elem: Int, collector: GatherCollector[(Int, Long)]): Unit = {
+          collector.push((elem, index))
+          index += 1
+        }
+      })
+    .toMat(Sink.ignore)(Keep.right)
+
+  private val gatherOneToOneZipWithIndex = Source
+    .repeat(1)
+    .take(OperationsPerInvocation)
+    .gather(() =>
+      new OneToOneGatherer[Int, (Int, Long)] {
+        private var index: Long = 0L
+        override def applyOne(elem: Int): (Int, Long) = {
+          val zipped = (elem, index)
+          index += 1
+          zipped
+        }
+      })
+    .toMat(Sink.ignore)(Keep.right)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherZipWithIndex(): Unit =
+    Await.result(gatherZipWithIndex.run(), Duration.Inf)
+
+  @Benchmark
+  @OperationsPerInvocation(OperationsPerInvocation)
+  def benchGatherOneToOneZipWithIndex(): Unit =
+    Await.result(gatherOneToOneZipWithIndex.run(), Duration.Inf)
 
   @Benchmark
   @OperationsPerInvocation(OperationsPerInvocation)

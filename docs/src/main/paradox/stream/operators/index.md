@@ -188,6 +188,7 @@ depending on being backpressured by downstream or not.
 |Source/Flow|<a name="sliding"></a>@ref[sliding](Source-or-Flow/sliding.md)|Provide a sliding window over the incoming stream and pass the windows as groups of elements downstream.|
 |Source/Flow|<a name="statefulmap"></a>@ref[statefulMap](Source-or-Flow/statefulMap.md)|Transform each stream element with the help of a state.|
 |Source/Flow|<a name="statefulmapconcat"></a>@ref[statefulMapConcat](Source-or-Flow/statefulMapConcat.md)|Transform each element into zero or more elements that are individually passed downstream.|
+|Source/Flow|<a name="gather"></a>@ref[gather](Source-or-Flow/gather.md)|Transform each input element into zero or more output elements using a stateful gatherer.|
 |Source/Flow|<a name="take"></a>@ref[take](Source-or-Flow/take.md)|Pass `n` incoming elements downstream and then complete|
 |Source/Flow|<a name="takeuntil"></a>@ref[takeUntil](Source-or-Flow/takeUntil.md)|Pass elements downstream until the predicate function returns true. The first element for which the predicate returns true is also emitted before the stream completes.|
 |Source/Flow|<a name="takewhile"></a>@ref[takeWhile](Source-or-Flow/takeWhile.md)|Pass elements downstream as long as a predicate function returns true and then complete. |
@@ -592,6 +593,7 @@ For more background see the @ref[Error Handling in Streams](../stream-error.md) 
 * [source](PubSub/source.md)
 * [splitAfter](Source-or-Flow/splitAfter.md)
 * [splitWhen](Source-or-Flow/splitWhen.md)
+* [gather](Source-or-Flow/gather.md)
 * [statefulMap](Source-or-Flow/statefulMap.md)
 * [statefulMapConcat](Source-or-Flow/statefulMapConcat.md)
 * [switchMap](Source-or-Flow/switchMap.md)

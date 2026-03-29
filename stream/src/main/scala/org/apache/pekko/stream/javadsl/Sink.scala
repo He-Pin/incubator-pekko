@@ -559,8 +559,6 @@ object Sink {
    * The `matF` function combines the wrapped sink's original materialized value with the termination
    * signal into a new materialized value of type `M2`.
    *
-   * '''Emits when''' the wrapped sink is ready
-   *
    * '''Backpressures when''' the wrapped sink backpressures
    *
    * '''Completes when''' upstream completes

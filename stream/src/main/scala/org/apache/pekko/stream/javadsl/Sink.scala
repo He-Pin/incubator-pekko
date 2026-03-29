@@ -550,6 +550,29 @@ object Sink {
     new Sink(scaladsl.Sink.lazyFutureSink { () =>
       create.create().asScala.map(_.asScala)(ExecutionContext.parasitic)
     }).mapMaterializedValue(_.asJava)
+
+  /**
+   * Wraps the given [[Sink]] with a termination watcher that materializes to a `CompletionStage<Done>`
+   * signalling when the stream connected to this sink terminates — whether by completion, cancellation,
+   * or failure.
+   *
+   * The `matF` function combines the wrapped sink's original materialized value with the termination
+   * signal into a new materialized value of type `M2`.
+   *
+   * '''Emits when''' the wrapped sink is ready
+   *
+   * '''Backpressures when''' the wrapped sink backpressures
+   *
+   * '''Completes when''' upstream completes
+   *
+   * '''Cancels when''' the wrapped sink cancels
+   *
+   * @since 1.2.0
+   */
+  def watchTermination[T, M, M2](
+      sink: javadsl.Sink[T, M],
+      matF: function.Function2[M, CompletionStage[Done], M2]): javadsl.Sink[T, M2] =
+    new Sink(scaladsl.Sink.watchTermination[T, M, M2](sink.asScala)((m, f) => matF(m, f.asJava)))
 }
 
 /**

@@ -556,7 +556,7 @@ object Sink {
    * `CompletionStage<Done>` to `matF`, which combines it with the wrapped sink's
    * materialized value into a new materialized value of type `M2`.
    *
-   * The termination stage completes with `Done` on normal stream completion or
+   * The termination future completes with `Done` on normal stream completion or
    * non-failure cancellation, and fails with the stream's exception on upstream failure,
    * downstream failure, or abrupt stage termination.
    *

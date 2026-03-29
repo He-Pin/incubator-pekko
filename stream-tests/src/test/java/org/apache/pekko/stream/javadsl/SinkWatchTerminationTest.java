@@ -155,10 +155,10 @@ public class SinkWatchTerminationTest extends StreamTest {
     } catch (ExecutionException e) {
       // The future should fail with either AbruptTerminationException (materializer shutdown)
       // or AbruptStageTerminationException (stage-level abrupt stop)
+      String exceptionName = e.getCause().getClass().getName();
       assertTrue(
-          "Expected abrupt termination exception but got: " + e.getCause().getClass().getName(),
-          e.getCause().getClass().getName().contains("AbruptTermination")
-              || e.getCause().getClass().getName().contains("Abrupt"));
+          "Expected abrupt termination exception but got: " + exceptionName,
+          exceptionName.contains("AbruptTermination") || exceptionName.contains("Abrupt"));
     }
   }
 }

@@ -758,9 +758,9 @@ object Sink {
     Sink.fromGraph(new LazySink(_ => create()))
 
   /**
-   * Wraps the given [[Sink]] with a [[pekko.stream.impl.fusing.GraphStages.TerminationWatcher]]
-   * that materializes to a @scala[`Future[Done]`] @java[`CompletionStage<Done>`] signalling when
-   * the stream connected to this sink terminates — whether by completion, cancellation, or failure.
+   * Wraps the given [[Sink]] with a termination watcher that materializes to a
+   * @scala[`Future[Done]`] @java[`CompletionStage<Done>`] signalling when the stream connected
+   * to this sink terminates — whether by completion, cancellation, or failure.
    *
    * The `matF` function combines the wrapped sink's original materialized value with the termination
    * signal into a new materialized value of type `M2`.

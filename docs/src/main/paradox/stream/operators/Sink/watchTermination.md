@@ -1,6 +1,6 @@
 # Sink.watchTermination
 
-Wraps a given `Sink` with a termination watcher, materializing to a @scala[`Future[Done]`] @java[`CompletionStage<Done>`] that signals when the stream terminates.
+Wraps a given `Sink` with a termination watcher, exposing a @scala[`Future[Done]`] @java[`CompletionStage<Done>`] that signals when the stream terminates.
 
 @ref[Sink operators](../index.md#sink-operators)
 
@@ -11,7 +11,7 @@ Wraps a given `Sink` with a termination watcher, materializing to a @scala[`Futu
 
 ## Description
 
-Wraps a given `Sink` with a termination watcher that materializes to a @scala[`Future[Done]`] @java[`CompletionStage<Done>`] which completes when the stream connected to this sink terminates — whether by normal completion, cancellation, or failure. The `matF` function combines the original sink's materialized value with this termination signal into a new materialized value.
+Wraps a given `Sink` with a termination watcher and exposes a @scala[`Future[Done]`] @java[`CompletionStage<Done>`] to the `matF` function, which combines it with the wrapped sink's original materialized value into a new materialized value of type `M2`. The termination signal completes with `Done` on normal stream completion or non-failure cancellation, and fails with the stream's exception on upstream failure, downstream failure, or abrupt stage termination.
 
 This is useful when you need to know when a stream has finished processing while also preserving the wrapped sink's materialized value. For example, you can use it to trigger cleanup logic, send notifications, or coordinate with other parts of your system upon stream termination.
 

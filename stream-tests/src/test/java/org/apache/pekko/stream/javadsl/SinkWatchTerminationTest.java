@@ -121,4 +121,44 @@ public class SinkWatchTerminationTest extends StreamTest {
         Source.single(42).runWith(Sink.watchTermination(Sink.ignore(), (mat, cs) -> cs), system);
     assertEquals(Done.done(), future.toCompletableFuture().get(3, TimeUnit.SECONDS));
   }
+
+  @Test
+  public void mustFailFutureWhenWrappedSinkFails() throws InterruptedException, TimeoutException {
+    RuntimeException ex = new RuntimeException("Sink failed.");
+    Sink<Integer, CompletionStage<Done>> failingSink =
+        Sink.foreach(
+            n -> {
+              if ((int) n == 3) throw ex;
+            });
+    Pair<CompletionStage<Done>, CompletionStage<Done>> result =
+        Source.from(Arrays.asList(1, 2, 3, 4, 5))
+            .toMat(Sink.watchTermination(failingSink, Pair::create), Keep.right())
+            .run(system);
+    try {
+      result.second().toCompletableFuture().get(3, TimeUnit.SECONDS);
+      assertTrue("Should have thrown", false);
+    } catch (ExecutionException e) {
+      assertEquals(ex, e.getCause());
+    }
+  }
+
+  @Test
+  public void mustFailFutureWhenAbruptlyTerminated() throws InterruptedException, TimeoutException {
+    org.apache.pekko.stream.Materializer mat =
+        org.apache.pekko.stream.Materializer.createMaterializer(system);
+    CompletionStage<Done> future =
+        Source.<Integer>maybe().runWith(Sink.watchTermination(Sink.ignore(), (m, cs) -> cs), mat);
+    mat.shutdown();
+    try {
+      future.toCompletableFuture().get(3, TimeUnit.SECONDS);
+      assertTrue("Should have thrown", false);
+    } catch (ExecutionException e) {
+      // The future should fail with either AbruptTerminationException (materializer shutdown)
+      // or AbruptStageTerminationException (stage-level abrupt stop)
+      assertTrue(
+          "Expected abrupt termination exception but got: " + e.getCause().getClass().getName(),
+          e.getCause().getClass().getName().contains("AbruptTermination")
+              || e.getCause().getClass().getName().contains("Abrupt"));
+    }
+  }
 }

@@ -758,12 +758,13 @@ object Sink {
     Sink.fromGraph(new LazySink(_ => create()))
 
   /**
-   * Wraps the given [[Sink]] with a termination watcher that materializes to a
-   * @scala[`Future[Done]`] @java[`CompletionStage<Done>`] signalling when the stream connected
-   * to this sink terminates — whether by completion, cancellation, or failure.
+   * Wraps the given [[Sink]] with a termination watcher and exposes a termination
+   * `Future[Done]` to `matF`, which combines it with the wrapped sink's materialized
+   * value into a new materialized value of type `M2`.
    *
-   * The `matF` function combines the wrapped sink's original materialized value with the termination
-   * signal into a new materialized value of type `M2`.
+   * The termination future completes with `Done` on normal stream completion or
+   * non-failure cancellation, and fails with the stream's exception on upstream failure,
+   * downstream failure, or abrupt stage termination.
    *
    * '''Backpressures when''' the wrapped sink backpressures
    *

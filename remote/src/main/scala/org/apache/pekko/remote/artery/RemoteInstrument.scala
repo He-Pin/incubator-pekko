@@ -351,7 +351,7 @@ private[remote] final class RemoteInstruments(
   }
 
   def messageReceived(inboundEnvelope: InboundEnvelope, size: Int, time: Long): Unit = {
-    @tailrec def messageRecieved(pos: Int): Unit = {
+    @tailrec def messageReceived(pos: Int): Unit = {
       if (pos < instruments.length) {
         val instrument = instruments(pos)
         try {
@@ -360,10 +360,10 @@ private[remote] final class RemoteInstruments(
           case NonFatal(t) =>
             log.debug("Message received in RemoteInstrument {} failed with {}", instrument.identifier, t.getMessage)
         }
-        messageRecieved(pos + 1)
+        messageReceived(pos + 1)
       }
     }
-    messageRecieved(0)
+    messageReceived(0)
   }
 
   private def messageReceivedInstrument(

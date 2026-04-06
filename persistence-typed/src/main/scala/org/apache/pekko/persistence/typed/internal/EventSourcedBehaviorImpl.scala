@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.annotation.nowarn
 
 import org.apache.pekko
+import pekko.Done
 import pekko.actor.typed
 import pekko.actor.typed.ActorRef
 import pekko.actor.typed.BackoffSupervisorStrategy
@@ -208,7 +209,8 @@ private[pekko] final case class EventSourcedBehaviorImpl[Command, Event, State](
             stashState = stashState,
             replication = replication,
             publishEvents = publishEvents,
-            internalLoggerFactory = () => internalLogger())
+            internalLoggerFactory = () => internalLogger(),
+            retentionInProgress = false)
 
           // needs to accept Any since we also can get messages from the journal
           // not part of the user facing Command protocol
@@ -385,13 +387,14 @@ final class ReplicatedPublishedEventMetaData(val replicaId: ReplicaId, private[p
 /**
  * INTERNAL API
  */
-@InternalApi
+@InternalStableApi
 private[pekko] final case class PublishedEventImpl(
     persistenceId: PersistenceId,
     sequenceNumber: Long,
     payload: Any,
     timestamp: Long,
-    replicatedMetaData: Option[ReplicatedPublishedEventMetaData])
+    replicatedMetaData: Option[ReplicatedPublishedEventMetaData],
+    replyTo: Option[ActorRef[Done]])
     extends PublishedEvent
     with InternalProtocol {
   import scala.jdk.OptionConverters._
@@ -410,6 +413,8 @@ private[pekko] final case class PublishedEventImpl(
     case Tagged(event, _) => copy(payload = event)
     case _                => this
   }
+
+  def lossyTransport: Boolean = replyTo.isEmpty
 
   override def getReplicatedMetaData: Optional[ReplicatedPublishedEventMetaData] = replicatedMetaData.toJava
 }

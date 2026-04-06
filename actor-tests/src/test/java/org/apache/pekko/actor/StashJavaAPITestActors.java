@@ -13,7 +13,7 @@
 
 package org.apache.pekko.actor;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class StashJavaAPITestActors {
 
@@ -22,7 +22,7 @@ public class StashJavaAPITestActors {
    * AbstractActorWithUnrestrictedStash more DRY since mixin is not possible.
    */
   private static int testReceive(
-      Object msg, int count, ActorRef sender, ActorRef self, UnrestrictedStash stash) {
+      Object msg, int count, ActorRef sender, ActorRef self, StashSupport stash) {
     if (msg instanceof String s) {
       if (count < 0) {
         sender.tell(s.length(), self);

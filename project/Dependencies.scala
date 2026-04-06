@@ -20,9 +20,10 @@ object Dependencies {
 
   object Protobuf {
     // https://protobuf.dev/support/version-support/
-    // protobuf-java 4.x corresponds with protoc 26.x-33.x
-    val protobufJavaVersion = "4.34.0"
-    val protocVersion = "33.0"
+    // The protoc version can be inferred from the Protobuf Java minor version number.
+    // Example: Protobuf Java version 3.25.x uses protoc version 25.x.
+    val protobufJavaVersion = "4.34.1"
+    val protocVersion = "34.1"
   }
 
   val junitVersion = "4.13.2"
@@ -34,12 +35,12 @@ object Dependencies {
   // https://github.com/aeron-io/aeron/blob/1.x.y/gradle/libs.versions.toml
   // (remember to also update the scala-steward pin)
   val agronaVersion = "2.2.4"
-  val nettyVersion = "4.2.10.Final"
+  val nettyVersion = "4.2.12.Final"
   val logbackVersion = "1.5.32"
 
   val jacksonAnnotationsVersion = "2.21"
-  val jacksonVersion2 = "2.21.1"
-  val jacksonVersion3 = "3.1.0"
+  val jacksonVersion2 = "2.21.2"
+  val jacksonVersion3 = "3.1.1"
 
   val scala213Version = "2.13.18"
   val scala3Version = "3.3.7"
@@ -47,9 +48,9 @@ object Dependencies {
 
   val reactiveStreamsVersion = "1.0.4"
 
-  val scalaTestVersion = "3.2.19"
-  val scalaTestScalaCheckVersion = "1-18"
-  val scalaCheckVersion = "1.18.0"
+  val scalaTestVersion = "3.2.20"
+  val scalaTestScalaCheckVersion = "1-19"
+  val scalaCheckVersion = "1.19.0"
 
   val Versions = Seq(crossScalaVersions := allScalaVersions, scalaVersion := allScalaVersions.head)
 
@@ -76,7 +77,7 @@ object Dependencies {
     // reactive streams
     val reactiveStreams = "org.reactivestreams" % "reactive-streams" % reactiveStreamsVersion
 
-    val lmdb = "org.lmdbjava" % "lmdbjava" % "0.9.1"
+    val lmdb = "org.lmdbjava" % "lmdbjava" % "0.9.3"
 
     val junit = "junit" % "junit" % junitVersion
     val junit6 = "org.junit.jupiter" % "junit-jupiter-engine" % junit6Version
@@ -118,6 +119,9 @@ object Dependencies {
       val commonsCodec = "commons-codec" % "commons-codec" % "1.21.0" % Test
       val junit = "junit" % "junit" % junitVersion % Test
       val junit6 = "org.junit.jupiter" % "junit-jupiter-engine" % junit6Version % Test
+      val junitPlatformLauncher = "org.junit.platform" % "junit-platform-launcher" % junit6Version % Test
+      val junitInterface = "com.github.sbt" % "junit-interface" % "0.13.3" % Test
+      val jupiterInterface = "com.github.sbt.junit" % "jupiter-interface" % "0.18.0" % Test
       val httpClient = "org.apache.httpcomponents" % "httpclient" % "4.5.14" % Test
 
       val logback = Compile.logback % Test
@@ -128,15 +132,15 @@ object Dependencies {
       // but the version of each module starts with the scalatest
       // version it was intended to work with
       val scalatestJUnit = "org.scalatestplus" %% "junit-4-13" % (scalaTestVersion + ".0") % Test
-      val scalatestTestNG = "org.scalatestplus" %% "testng-7-5" % "3.2.17.0" % Test
+      val scalatestTestNG = "org.scalatestplus" %% "testng-7-12" % (scalaTestVersion + ".0") % Test
       val scalatestScalaCheck =
         "org.scalatestplus" %% s"scalacheck-$scalaTestScalaCheckVersion" % (scalaTestVersion + ".0") % Test
       // https://github.com/scalatest/scalatest/issues/2311
-      val scalatestMockito = "org.scalatestplus" %% "mockito-4-11" % "3.2.18.0" % Test
+      val scalatestMockito = "org.scalatestplus" %% "mockito-5-23" % (scalaTestVersion + ".0") % Test
 
       val pojosr = "com.googlecode.pojosr" % "de.kalpatec.pojosr.framework" % "0.2.1" % Test
       val tinybundles = "org.ops4j.pax.tinybundles" % "tinybundles" % "4.0.1" % Test
-      val bndlib = "biz.aQute.bnd" % "biz.aQute.bndlib" % "7.2.1" % Test
+      val bndlib = "biz.aQute.bnd" % "biz.aQute.bndlib" % "7.2.3" % Test
       val `pax-exam` = "org.ops4j.pax.exam" % "pax-exam" % "4.14.0" % Test
       val `pax-exam-cm` = "org.ops4j.pax.exam" % "pax-exam-cm" % "4.14.0" % Test
       val `pax-exam-container-forked` = "org.ops4j.pax.exam" % "pax-exam-container-forked" % "4.14.0" % Test
@@ -144,7 +148,7 @@ object Dependencies {
       // in-memory filesystem for file related tests
       val jimfs = "com.google.jimfs" % "jimfs" % "1.3.1" % Test
 
-      val dockerClientVersion = "3.7.0"
+      val dockerClientVersion = "3.7.1"
       val dockerClient = Seq(
         "com.github.docker-java" % "docker-java-core" % dockerClientVersion % Test,
         "com.github.docker-java" % "docker-java-transport-httpclient5" % dockerClientVersion % Test)
@@ -213,7 +217,11 @@ object Dependencies {
 
   val coordination = l ++= Seq(TestDependencies.junit, TestDependencies.scalatest)
 
-  val testkit = l ++= Seq(TestDependencies.junit, TestDependencies.scalatest) ++ TestDependencies.metricsAll
+  val testkit = l ++= Seq(
+    TestDependencies.junit,
+    TestDependencies.junit6,
+    TestDependencies.junitPlatformLauncher,
+    TestDependencies.scalatest) ++ TestDependencies.metricsAll
 
   // TestDependencies.dockerClient brings in older versions of jackson libs that have CVEs
   val actorTests = l ++= Seq(
@@ -229,6 +237,8 @@ object Dependencies {
     Provided.logback,
     Provided.junit,
     Provided.junit6,
+    TestDependencies.junitPlatformLauncher,
+    TestDependencies.junitInterface,
     Provided.scalatest,
     TestDependencies.scalatestJUnit)
 

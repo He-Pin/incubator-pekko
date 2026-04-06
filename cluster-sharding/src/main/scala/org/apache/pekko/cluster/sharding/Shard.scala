@@ -17,7 +17,6 @@ import java.net.URLEncoder
 import java.util
 
 import scala.annotation.nowarn
-import scala.collection.immutable.Set
 import scala.concurrent.duration._
 
 import org.apache.pekko
@@ -43,11 +42,12 @@ import pekko.cluster.sharding.internal.EntityPassivationStrategy
 import pekko.cluster.sharding.internal.RememberEntitiesProvider
 import pekko.cluster.sharding.internal.RememberEntitiesShardStore
 import pekko.cluster.sharding.internal.RememberEntitiesShardStore.GetEntities
-import pekko.cluster.sharding.internal.RememberEntityStarter
+import pekko.cluster.sharding.internal.RememberEntityStarterManager
 import pekko.coordination.lease.scaladsl.Lease
 import pekko.coordination.lease.scaladsl.LeaseProvider
 import pekko.event.LoggingAdapter
 import pekko.pattern.pipe
+import pekko.util.Clock
 import pekko.util.MessageBufferMap
 import pekko.util.OptionVal
 import pekko.util.PrettyDuration._
@@ -105,7 +105,8 @@ private[pekko] object Shard {
       extractEntityId: ShardRegion.ExtractEntityId,
       extractShardId: ShardRegion.ExtractShardId,
       handOffStopMessage: Any,
-      rememberEntitiesProvider: Option[RememberEntitiesProvider]): Props =
+      rememberEntitiesProvider: Option[RememberEntitiesProvider],
+      rememberEntityStarterManager: ActorRef): Props =
     Props(
       new Shard(
         typeName,
@@ -115,7 +116,8 @@ private[pekko] object Shard {
         extractEntityId,
         extractShardId,
         handOffStopMessage,
-        rememberEntitiesProvider)).withDeploy(Deploy.local)
+        rememberEntitiesProvider,
+        rememberEntityStarterManager)).withDeploy(Deploy.local)
 
   case object PassivateIntervalTick extends NoSerializationVerificationNeeded
 
@@ -427,7 +429,8 @@ private[pekko] class Shard(
     extractEntityId: ShardRegion.ExtractEntityId,
     @nowarn("msg=never used") extractShardId: ShardRegion.ExtractShardId,
     handOffStopMessage: Any,
-    rememberEntitiesProvider: Option[RememberEntitiesProvider])
+    rememberEntitiesProvider: Option[RememberEntitiesProvider],
+    rememberEntityStarterManager: ActorRef)
     extends Actor
     with ActorLogging
     with Stash
@@ -470,7 +473,7 @@ private[pekko] class Shard(
   private var handOffStopper: Option[ActorRef] = None
   private var preparingForShutdown = false
 
-  private val passivationStrategy = EntityPassivationStrategy(settings)
+  private val passivationStrategy = EntityPassivationStrategy(settings, clock = () => Clock(context.system))
 
   import context.dispatcher
   private val passivateIntervalTask = passivationStrategy.scheduledInterval.map { interval =>
@@ -603,9 +606,7 @@ private[pekko] class Shard(
     if (ids.nonEmpty) {
       entities.alreadyRemembered(ids)
       log.debug("{}: Restarting set of [{}] entities", typeName, ids.size)
-      context.actorOf(
-        RememberEntityStarter.props(context.parent, self, shardId, ids, settings),
-        "RememberEntitiesStarter")
+      rememberEntityStarterManager ! RememberEntityStarterManager.StartEntities(self, shardId, ids)
     }
     shardInitialized()
   }
@@ -1192,6 +1193,7 @@ private[pekko] class Shard(
 
   override def postStop(): Unit = {
     passivateIntervalTask.foreach(_.cancel())
+    lease.foreach(_.release())
     log.debug("{}: Shard [{}] shutting down", typeName, shardId)
   }
 

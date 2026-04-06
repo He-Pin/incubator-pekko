@@ -18,7 +18,7 @@ import scala.concurrent.Future
 import scala.util.{ Failure => ScalaFailure }
 import scala.util.{ Success => ScalaSuccess }
 import scala.util.Try
-import scala.util.control.NoStackTrace
+import scala.util.control.{ NoStackTrace, NonFatal }
 
 import org.apache.pekko
 import pekko.Done
@@ -101,9 +101,76 @@ object StatusReply {
    * For cases where types are needed to identify errors and behave differently enumerating them with a specific
    * set of response messages may be a better alternative to encoding them as generic exceptions.
    *
-   * Also note that Pekko does not contain pre-build serializers for arbitrary exceptions.
+   * Also note that Pekko does not contain pre-built serializers for arbitrary exceptions.
    */
   def error[T](exception: Throwable): StatusReply[T] = Error(exception)
+
+  /**
+   * Scala API: Turn a [[scala.util.Try]] into a status reply.
+   *
+   * Transforms exceptions into status reply errors containing just the exception message string.
+   * This makes it safe for use with remote actors since Pekko includes built-in serializers
+   * for text-based error messages, unlike arbitrary exception types.
+   *
+   * See [[#fromTryKeepException]] for passing the exception along as is.
+   *
+   * @since 2.0.0
+   */
+  def fromTry[T](status: Try[T]): StatusReply[T] = status match {
+    case ScalaSuccess(value) => success(value)
+    case ScalaFailure(t)     => error[T](Option(t.getMessage).getOrElse(t.getClass.getName))
+  }
+
+  /**
+   * Scala API: Turn a [[scala.util.Try]] into a status reply, keeping the original exception.
+   *
+   * Unlike [[#fromTry]], this preserves the full exception object. This is useful when callers
+   * need to match on exception types, but requires that serializers are configured for the
+   * exception types used when communicating with remote actors.
+   *
+   * Prefer [[#fromTry]] (string-based errors) when possible to avoid tightly coupled logic across
+   * actors and passing internal failure details on to callers that can not do much to handle them.
+   *
+   * Also note that Pekko does not contain pre-built serializers for arbitrary exceptions.
+   *
+   * @since 2.0.0
+   */
+  def fromTryKeepException[T](status: Try[T]): StatusReply[T] = new StatusReply(status)
+
+  /**
+   * Java API: Convert the result of a [[java.util.concurrent.Callable]] into a [[StatusReply]].
+   *
+   * If the callable completes successfully, wraps the result in a successful reply.
+   * If it throws an exception, converts the exception message to an error reply
+   * (discarding the original exception type, making it safe for remote serialization).
+   *
+   * This is the Java-friendly equivalent of [[#fromTry]].
+   *
+   * @since 2.0.0
+   */
+  def fromCallable[T](callable: java.util.concurrent.Callable[T]): StatusReply[T] =
+    try success(callable.call())
+    catch {
+      case NonFatal(e) => error[T](Option(e.getMessage).getOrElse(e.getClass.getName))
+    }
+
+  /**
+   * Java API: Convert the result of a [[java.util.concurrent.Callable]] into a [[StatusReply]],
+   * keeping the original exception in case of failure.
+   *
+   * Unlike [[#fromCallable]], this preserves the full exception object. This is useful when
+   * callers need to match on exception types, but requires that serializers are configured
+   * for the exception types used when communicating with remote actors.
+   *
+   * This is the Java-friendly equivalent of [[#fromTryKeepException]].
+   *
+   * @since 2.0.0
+   */
+  def fromCallableKeepException[T](callable: java.util.concurrent.Callable[T]): StatusReply[T] =
+    try success(callable.call())
+    catch {
+      case NonFatal(e) => error[T](e)
+    }
 
   /**
    * Carrier exception used for textual error descriptions.
@@ -159,7 +226,7 @@ object StatusReply {
      * For cases where types are needed to identify errors and behave differently enumerating them with a specific
      * set of response messages may be a better alternative to encoding them as generic exceptions.
      *
-     * Also note that Pekko does not contain pre-build serializers for arbitrary exceptions.
+     * Also note that Pekko does not contain pre-built serializers for arbitrary exceptions.
      */
     def apply[T](exception: Throwable): StatusReply[T] = new StatusReply(ScalaFailure(exception))
     def unapply(status: StatusReply[_]): Option[Throwable] =

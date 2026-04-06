@@ -38,13 +38,13 @@ jobs:
           java-version: 17
 
       - name: Install sbt
-        uses: sbt/setup-sbt@1cad58d595b729a71ca2254cdf5b43dd6f42d4bb # v1.1.18
+        uses: sbt/setup-sbt@508b753e53cb6095967669e0911487d2b9bc9f41 # v1.1.22
 
       - name: Cache Coursier cache
-        uses: coursier/cache-action@e47d7d35a0d3a2c7f649ca5c63dfc2bbfaa002e7 # 8.0.1
+        uses: coursier/cache-action@90c37294538be80a558fd665531fcdc2b467b475 # 8.1.0
     
       - name: Setup Coursier
-        uses: coursier/setup-action@7acb5c9ea69bc1a1bb185ec45ebce2ac114f3628 # v2.0.3
+        uses: coursier/setup-action@fd1707a76b027efdfb66ca79318b4d29b72e5a02 # v3.0.0
 
       - name: Create the Pekko site
         env:

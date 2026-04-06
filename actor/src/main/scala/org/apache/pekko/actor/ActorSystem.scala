@@ -547,7 +547,7 @@ abstract class ActorSystem extends ActorRefFactory with ClassicActorSystemProvid
   def logConfiguration(): Unit
 
   /**
-   * Construct a path below the application guardian to be used with [[ActorSystem#actorSelection]].
+   * Construct a path below the application guardian to be used with `actorSelection`.
    */
   def /(name: String): ActorPath
 
@@ -557,7 +557,7 @@ abstract class ActorSystem extends ActorRefFactory with ClassicActorSystemProvid
   def child(child: String): ActorPath = /(child)
 
   /**
-   * Construct a path below the application guardian to be used with [[ActorSystem#actorSelection]].
+   * Construct a path below the application guardian to be used with `actorSelection`.
    */
   def /(name: Iterable[String]): ActorPath
 
@@ -673,7 +673,7 @@ abstract class ActorSystem extends ActorRefFactory with ClassicActorSystemProvid
    * This will stop the guardian actor, which in turn
    * will recursively stop all its child actors, and finally the system guardian
    * (below which the logging actors reside) and then execute all registered
-   * termination handlers (see [[ActorSystem#registerOnTermination]]).
+   * termination handlers (see `registerOnTermination`).
    * Be careful to not schedule any operations on completion of the returned future
    * using the dispatcher of this actor system as it will have been shut down before the
    * future completes.
@@ -685,7 +685,7 @@ abstract class ActorSystem extends ActorRefFactory with ClassicActorSystemProvid
    * [[CoordinatedShutdown.ActorSystemTerminateReason]]. This method will block
    * until either the actor system is terminated or
    * `pekko.coordinated-shutdown.close-actor-system-timeout` timeout duration is
-   * passed, in which case a [[TimeoutException]] is thrown.
+   * passed, in which case a [[java.util.concurrent.TimeoutException]] is thrown.
    *
    * If `pekko.coordinated-shutdown.run-by-actor-system-terminate` is configured to `off`
    * it will not run `CoordinatedShutdown`, but the `ActorSystem` and its actors
@@ -694,7 +694,7 @@ abstract class ActorSystem extends ActorRefFactory with ClassicActorSystemProvid
    * This will stop the guardian actor, which in turn
    * will recursively stop all its child actors, and finally the system guardian
    * (below which the logging actors reside) and then execute all registered
-   * termination handlers (see [[ActorSystem#registerOnTermination]]).
+   * termination handlers (see `registerOnTermination`).
    * @since 1.3.0
    */
   @throws(classOf[TimeoutException])
@@ -703,7 +703,7 @@ abstract class ActorSystem extends ActorRefFactory with ClassicActorSystemProvid
   /**
    * Returns a Future which will be completed after the ActorSystem has been terminated
    * and termination hooks have been executed. If you registered any callback with
-   * [[ActorSystem#registerOnTermination]], the returned Future from this method will not complete
+   * `registerOnTermination`, the returned Future from this method will not complete
    * until all the registered callbacks are finished. Be careful to not schedule any operations,
    * such as `onComplete`, on the dispatchers (`ExecutionContext`) of this actor system as they
    * will have been shut down before this future completes.
@@ -713,7 +713,7 @@ abstract class ActorSystem extends ActorRefFactory with ClassicActorSystemProvid
   /**
    * Returns a CompletionStage which will be completed after the ActorSystem has been terminated
    * and termination hooks have been executed. If you registered any callback with
-   * [[ActorSystem#registerOnTermination]], the returned CompletionStage from this method will not complete
+   * `registerOnTermination`, the returned CompletionStage from this method will not complete
    * until all the registered callbacks are finished. Be careful to not schedule any operations,
    * such as `thenRunAsync`, on the dispatchers (`Executor`) of this actor system as they
    * will have been shut down before this CompletionStage completes.
@@ -848,6 +848,13 @@ private[pekko] class ActorSystemImpl(
 
   private val _dynamicAccess: DynamicAccess = createDynamicAccess()
 
+  /**
+   * Optimistic optimization: Tries to avoid going through the extension infrastructure if possible when using
+   * the typed system. Will contain a org.apache.pekko.actor.typed.ActorSystem if set, should not be touched by
+   * anything but the typed ActorSystemAdapter.
+   */
+  private[pekko] var typedSystem: OptionVal[AnyRef] = OptionVal.None
+
   final val settings: Settings = {
     val config = Settings.amendSlf4jConfig(
       applicationConfig.withFallback(ConfigFactory.defaultReference(classLoader)),
@@ -926,15 +933,29 @@ private[pekko] class ActorSystemImpl(
 
   def actorOf(props: Props, name: String): ActorRef =
     if (guardianProps.isEmpty) guardian.underlying.attachChild(props, name, systemService = false)
-    else
-      throw new UnsupportedOperationException(
-        s"cannot create top-level actor [$name] from the outside on ActorSystem with custom user guardian")
+    else {
+      val message =
+        if (isTypedGuardian)
+          s"cannot create top-level actor [$name] from the outside on a typed ActorSystem.  In a typed ActorSystem, " +
+          "top-level actors should be spawned as children of the guardian behavior; if this is not possible (e.g. this " +
+          "actorOf call is in a library), a classic ActorSystem should be created and used to spawn top-level actors."
+        else s"cannot create top-level actor [$name] from the outside on ActorSystem with custom user guardian"
+
+      throw new UnsupportedOperationException(message)
+    }
 
   def actorOf(props: Props): ActorRef =
     if (guardianProps.isEmpty) guardian.underlying.attachChild(props, systemService = false)
-    else
-      throw new UnsupportedOperationException(
-        "cannot create top-level actor from the outside on ActorSystem with custom user guardian")
+    else {
+      val message =
+        if (isTypedGuardian)
+          "cannot create top-level actor from the outside on a typed ActorSystem.  In a typed ActorSystem, " +
+          "top-level actors should be spawned as children of the guardian behavior; if this is not possible (e.g. this " +
+          "actorOf call is in a library), a classic ActorSystem should be created and used to spawn top-level actors."
+        else "cannot create top-level actor from the outside on ActorSystem with custom user guardian"
+
+      throw new UnsupportedOperationException(message)
+    }
 
   def stop(actor: ActorRef): Unit = {
     val path = actor.path
@@ -1331,4 +1352,7 @@ private[pekko] class ActorSystemImpl(
      */
     def terminationFuture: Future[T] = done.future
   }
+
+  private def isTypedGuardian: Boolean =
+    guardianProps.exists(_.clazz.getName == "org.apache.pekko.actor.TypedCreatorFunctionConsumer")
 }

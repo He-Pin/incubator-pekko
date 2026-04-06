@@ -20,6 +20,8 @@ import scala.jdk.DurationConverters._
 
 import org.apache.pekko
 import pekko.actor.typed.ActorSystem
+import pekko.annotation.ApiMayChange
+import pekko.annotation.DoNotInherit
 import pekko.annotation.InternalApi
 
 import com.typesafe.config.Config
@@ -40,8 +42,11 @@ object ShardedDaemonProcessSettings {
    */
   def fromConfig(config: Config): ShardedDaemonProcessSettings = {
     val keepAliveInterval = config.getDuration("keep-alive-interval").toScala
+    val keepAliveFromNumberOfNodes = config.getInt("keep-alive-from-number-of-nodes")
+    val keepAliveThrottleInterval = config.getDuration("keep-alive-throttle-interval").toScala
 
-    new ShardedDaemonProcessSettings(keepAliveInterval, None, None)
+    new ShardedDaemonProcessSettings(keepAliveInterval, None, None, keepAliveFromNumberOfNodes,
+      keepAliveThrottleInterval)
   }
 
 }
@@ -52,7 +57,9 @@ object ShardedDaemonProcessSettings {
 final class ShardedDaemonProcessSettings @InternalApi private[pekko] (
     val keepAliveInterval: FiniteDuration,
     val shardingSettings: Option[ClusterShardingSettings],
-    val role: Option[String]) {
+    val role: Option[String],
+    val keepAliveFromNumberOfNodes: Int,
+    val keepAliveThrottleInterval: FiniteDuration) {
 
   /**
    * Scala API: The interval each parent of the sharded set is pinged from each node in the cluster.
@@ -86,10 +93,51 @@ final class ShardedDaemonProcessSettings @InternalApi private[pekko] (
   def withRole(role: String): ShardedDaemonProcessSettings =
     copy(role = Option(role))
 
+  /**
+   * Keep alive messages from this number of nodes.
+   */
+  def withKeepAliveFromNumberOfNodes(keepAliveFromNumberOfNodes: Int): ShardedDaemonProcessSettings =
+    copy(keepAliveFromNumberOfNodes = keepAliveFromNumberOfNodes)
+
+  /**
+   * Scala API: Keep alive messages are sent with this delay between each message.
+   */
+  def withKeepAliveThrottleInterval(keepAliveThrottleInterval: FiniteDuration): ShardedDaemonProcessSettings =
+    copy(keepAliveThrottleInterval = keepAliveThrottleInterval)
+
+  /**
+   * Java API: Keep alive messages are sent with this delay between each message.
+   */
+  def withKeepAliveThrottleInterval(keepAliveThrottleInterval: Duration): ShardedDaemonProcessSettings =
+    copy(keepAliveThrottleInterval = keepAliveThrottleInterval.toScala)
+
   private def copy(
       keepAliveInterval: FiniteDuration = keepAliveInterval,
       shardingSettings: Option[ClusterShardingSettings] = shardingSettings,
-      role: Option[String] = role): ShardedDaemonProcessSettings =
-    new ShardedDaemonProcessSettings(keepAliveInterval, shardingSettings, role)
+      role: Option[String] = role,
+      keepAliveFromNumberOfNodes: Int = keepAliveFromNumberOfNodes,
+      keepAliveThrottleInterval: FiniteDuration = keepAliveThrottleInterval): ShardedDaemonProcessSettings =
+    new ShardedDaemonProcessSettings(keepAliveInterval, shardingSettings, role, keepAliveFromNumberOfNodes,
+      keepAliveThrottleInterval)
+
+}
+
+/**
+ * Context with details about the Sharded Daemon Process instance to use when starting it
+ *
+ * Not for user extension
+ */
+@DoNotInherit
+@ApiMayChange
+trait ShardedDaemonProcessContext {
+  def processNumber: Int
+  def totalProcesses: Int
+
+  /**
+   * The revision starts at 0 and each time the number of processes is changed, the revision increases with 1
+   */
+  def revision: Long
+
+  def name: String
 
 }

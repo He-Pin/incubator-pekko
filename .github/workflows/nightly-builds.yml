@@ -27,10 +27,10 @@ jobs:
           java-version: 17
 
       - name: Install sbt
-        uses: sbt/setup-sbt@1cad58d595b729a71ca2254cdf5b43dd6f42d4bb # v1.1.18
+        uses: sbt/setup-sbt@508b753e53cb6095967669e0911487d2b9bc9f41 # v1.1.22
 
       - name: Cache Coursier cache
-        uses: coursier/cache-action@e47d7d35a0d3a2c7f649ca5c63dfc2bbfaa002e7 # 8.0.1
+        uses: coursier/cache-action@90c37294538be80a558fd665531fcdc2b467b475 # 8.1.0
 
       - name: Enable jvm-opts
         run: cp .jvmopts-ci .jvmopts
@@ -82,10 +82,10 @@ jobs:
           java-version: 17
 
       - name: Install sbt
-        uses: sbt/setup-sbt@1cad58d595b729a71ca2254cdf5b43dd6f42d4bb # v1.1.18
+        uses: sbt/setup-sbt@508b753e53cb6095967669e0911487d2b9bc9f41 # v1.1.22
 
       - name: Cache Coursier cache
-        uses: coursier/cache-action@e47d7d35a0d3a2c7f649ca5c63dfc2bbfaa002e7 # 8.0.1
+        uses: coursier/cache-action@90c37294538be80a558fd665531fcdc2b467b475 # 8.1.0
 
       - name: Enable jvm-opts
         run: cp .jvmopts-ci .jvmopts
@@ -135,10 +135,10 @@ jobs:
           java-version: ${{ matrix.javaVersion }}
 
       - name: Install sbt
-        uses: sbt/setup-sbt@1cad58d595b729a71ca2254cdf5b43dd6f42d4bb # v1.1.18
+        uses: sbt/setup-sbt@508b753e53cb6095967669e0911487d2b9bc9f41 # v1.1.22
 
       - name: Cache Coursier cache
-        uses: coursier/cache-action@e47d7d35a0d3a2c7f649ca5c63dfc2bbfaa002e7 # 8.0.1
+        uses: coursier/cache-action@90c37294538be80a558fd665531fcdc2b467b475 # 8.1.0
 
       - name: Enable jvm-opts
         run: cp .jvmopts-ci .jvmopts
@@ -148,12 +148,18 @@ jobs:
 
       - name: Compile and Test
         # note that this is not running any multi-jvm tests because multi-in-test=false
+        # JDK 25 ForkJoinPool scheduling changes need a higher timefactor (see #2573)
         run: |-
+          if [ "${{ matrix.javaVersion }}" -ge 25 ]; then
+            TIMEFACTOR=3
+          else
+            TIMEFACTOR=2
+          fi
           sbt \
             -Dpekko.cluster.assert=on \
             -Dpekko.log.timestamps=true \
-            -Dpekko.test.timefactor=2 \
-            -Dpekko.actor.testkit.typed.timefactor=2 \
+            -Dpekko.test.timefactor=$TIMEFACTOR \
+            -Dpekko.actor.testkit.typed.timefactor=$TIMEFACTOR \
             -Dpekko.test.tags.exclude=gh-exclude,timing \
             -Dpekko.test.multi-in-test=false \
             -Dio.netty.leakDetection.level=PARANOID \

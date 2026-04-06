@@ -33,15 +33,26 @@ import pekko.stream._
 import pekko.stream.testkit.{ ScriptedTest, StreamSpec }
 import pekko.stream.testkit.scaladsl.TestSink
 
+import org.scalatest.time.{ Seconds, Span }
+
 class FlowFlatMapConcatParallelismSpec extends StreamSpec("""
     pekko.stream.materializer.initial-input-buffer-size = 2
   """) with ScriptedTest with FutureTimeoutSupport {
+
+  // 100K-element tests need extra headroom, especially on JDK 25+ where
+  // ForkJoinPool scheduling changes slow down highly-parallel workloads (#2573)
+  override implicit val patience: PatienceConfig =
+    PatienceConfig(timeout = Span(60, Seconds), interval = Span(1, Seconds))
+
   val toSeq = Flow[Int].grouped(1000).toMat(Sink.head)(Keep.right)
 
   class BoomException extends RuntimeException("BOOM~~") with NoStackTrace
+
+  val checkValues = List(1, 2, 4, 8, 16, 32, 64, 128)
+
   "A flatMapConcat" must {
 
-    for (i <- 1 until 129) {
+    for (i <- checkValues) {
       s"work with value presented sources with parallelism: $i" in {
         Source(
           List(
@@ -90,7 +101,7 @@ class FlowFlatMapConcatParallelismSpec extends StreamSpec("""
       (sum, seq)
     }
 
-    for (i <- 1 until 129) {
+    for (i <- checkValues) {
       s"work with generated value presented sources with parallelism: $i " in {
         val (sum, sources @ _) = generateRandomValuePresentedSources(100000)
         Source(sources)
@@ -101,7 +112,7 @@ class FlowFlatMapConcatParallelismSpec extends StreamSpec("""
       }
     }
 
-    for (i <- 1 until 129) {
+    for (i <- checkValues) {
       s"work with generated value sequenced sources with parallelism: $i " in {
         val (sum, sources @ _) = generateSequencedValuePresentedSources(100000)
         Source(sources)

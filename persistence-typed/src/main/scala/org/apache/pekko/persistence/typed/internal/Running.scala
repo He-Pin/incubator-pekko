@@ -361,7 +361,7 @@ private[pekko] object Running {
           "Saving event [{}] from [{}] as first time",
           envelope.event.originSequenceNr,
           envelope.event.originReplica)
-        handleExternalReplicatedEventPersist(replication, envelope.event)
+        handleExternalReplicatedEventPersist(replication, envelope.event, None)
       } else {
         setup.internalLogger.debug(
           "Filtering event [{}] from [{}] as it was already seen",
@@ -382,7 +382,9 @@ private[pekko] object Running {
         case Some(replication) =>
           event.replicatedMetaData match {
             case None =>
-              setup.internalLogger.warn("Received published event for [{}] but with no replicated metadata, dropping")
+              setup.internalLogger.warn(
+                "Received published event for [{}] but with no replicated metadata, dropping",
+                event.persistenceId)
               this
             case Some(replicatedEventMetaData) =>
               onPublishedEvent(state, replication, replicatedEventMetaData, event)
@@ -409,6 +411,7 @@ private[pekko] object Running {
             "Ignoring published replicated event with seqNr [{}] from our own replica id [{}]",
             event.sequenceNumber,
             originReplicaId)
+        event.replyTo.foreach(_ ! pekko.Done) // probably won't happen
         this
       } else if (!replication.allReplicas.contains(originReplicaId)) {
         log.warnN(
@@ -417,18 +420,20 @@ private[pekko] object Running {
           replication.allReplicas.mkString(", "))
         this
       } else {
-        val expectedSequenceNumber = state.seenPerReplica.getOrElse(originReplicaId, 0L) + 1
-        if (expectedSequenceNumber > event.sequenceNumber) {
-          // already seen
+        val seenSequenceNr = state.seenPerReplica.getOrElse(originReplicaId, 0L)
+        if (seenSequenceNr >= event.sequenceNumber) {
+          // already seen/deduplication
           if (log.isDebugEnabled)
             log.debugN(
-              "Ignoring published replicated event with seqNr [{}] from replica [{}] because it was already seen ([{}])",
+              "Ignoring published replicated event with seqNr [{}] from replica [{}] because it was already seen (version: {})",
               event.sequenceNumber,
               originReplicaId,
-              expectedSequenceNumber)
+              state.seenPerReplica)
+          event.replyTo.foreach(_ ! pekko.Done)
           this
-        } else if (expectedSequenceNumber != event.sequenceNumber) {
-          // gap in sequence numbers (message lost or query and direct replication out of sync, should heal up by itself
+        } else if (event.lossyTransport && event.sequenceNumber != (seenSequenceNr + 1)) {
+          // Lossy transport/opportunistic replication cannot allow gaps in sequence
+          // numbers (message lost or query and direct replication out of sync, should heal up by itself
           // once the query catches up)
           if (log.isDebugEnabled) {
             log.debugN(
@@ -436,7 +441,7 @@ private[pekko] object Running {
               "because expected replication seqNr was [{}] ",
               event.sequenceNumber,
               originReplicaId,
-              expectedSequenceNumber)
+              seenSequenceNr + 1)
           }
           this
         } else {
@@ -458,7 +463,8 @@ private[pekko] object Running {
               event.event.asInstanceOf[E],
               originReplicaId,
               event.sequenceNumber,
-              replicatedMetadata.version))
+              replicatedMetadata.version),
+            event.replyTo)
         }
 
       }
@@ -477,7 +483,8 @@ private[pekko] object Running {
 
     private def handleExternalReplicatedEventPersist(
         replication: ReplicationSetup,
-        event: ReplicatedEvent[E]): Behavior[InternalProtocol] = {
+        event: ReplicatedEvent[E],
+        ackToOnPersisted: Option[pekko.actor.typed.ActorRef[pekko.Done]]): Behavior[InternalProtocol] = {
       _currentSequenceNumber = state.seqNr + 1
       val isConcurrent: Boolean = event.originVersion <> state.version
       val updatedVersion = event.originVersion.merge(state.version)
@@ -499,6 +506,14 @@ private[pekko] object Running {
 
       replication.clearContext()
 
+      val sideEffects = ackToOnPersisted match {
+        case None      => Nil
+        case Some(ref) =>
+          SideEffect[S] { _ =>
+            ref ! pekko.Done
+          } :: Nil
+      }
+
       val newState2: RunningState[S, C] = internalPersist(
         setup.context,
         null,
@@ -516,7 +531,7 @@ private[pekko] object Running {
         numberOfEvents = 1,
         shouldSnapshotAfterPersist,
         shouldPublish = false,
-        Nil)
+        sideEffects)
     }
 
     private def handleEventPersist(
@@ -789,7 +804,7 @@ private[pekko] object Running {
           val meta = setup.replication.map(replication =>
             new ReplicatedPublishedEventMetaData(replication.replicaId, state.version))
           context.system.eventStream ! EventStream.Publish(
-            PublishedEventImpl(setup.persistenceId, p.sequenceNr, p.payload, p.timestamp, meta))
+            PublishedEventImpl(setup.persistenceId, p.sequenceNr, p.payload, p.timestamp, meta, None))
         }
 
         // only once all things are applied we can revert back
@@ -798,13 +813,27 @@ private[pekko] object Running {
           this
         } else {
           visibleState = state
-          if (shouldSnapshotAfterPersist == NoSnapshot || state.state == null) {
+          def skipRetention(): Boolean = {
+            // Only one retention process (snapshot + optional event/snapshot deletion) at a time.
+            // When retention is already in progress, both the snapshot and the subsequent
+            // deletion steps are skipped together. This keeps retention state simple and avoids
+            // transiently exceeding the intended snapshot count. The next retention cycle at a
+            // higher seqNr will cover the range of the skipped one, so no data is lost.
+            val inProgress = shouldSnapshotAfterPersist == SnapshotWithRetention && setup.isRetentionInProgress()
+            if (inProgress)
+              setup.internalLogger.debug(
+                "Skipping retention at seqNr [{}] because previous retention has not completed yet. " +
+                "Next retention will cover skipped retention.",
+                state.seqNr)
+            inProgress
+          }
+          if (shouldSnapshotAfterPersist == NoSnapshot || state.state == null || skipRetention()) {
             val newState = applySideEffects(sideEffects, state)
-
             onWriteDone(setup.context, p)
-
             tryUnstashOne(newState)
           } else {
+            if (shouldSnapshotAfterPersist == SnapshotWithRetention)
+              setup.retentionProgressSaveSnapshotStarted(state.seqNr)
             internalSaveSnapshot(state)
             new StoringSnapshot(state, sideEffects, shouldSnapshotAfterPersist)
           }
@@ -895,14 +924,23 @@ private[pekko] object Running {
             setup.retention match {
               case DisabledRetentionCriteria                          => // no further actions
               case s @ SnapshotCountRetentionCriteriaImpl(_, _, true) =>
+                setup.retentionProgressSaveSnapshotEnded(state.seqNr, success = true)
                 // deleteEventsOnSnapshot == true, deletion of old events
-                val deleteEventsToSeqNr = s.deleteUpperSequenceNr(meta.sequenceNr)
+                val deleteEventsToSeqNr = {
+                  if (setup.isOnlyOneSnapshot) meta.sequenceNr // delete all events up to the snapshot
+                  else s.deleteUpperSequenceNr(meta.sequenceNr) // keepNSnapshots batches of events
+                }
                 // snapshot deletion then happens on event deletion success in Running.onDeleteEventsJournalResponse
+                setup.retentionProgressDeleteEventsStarted(state.seqNr, deleteEventsToSeqNr)
                 internalDeleteEvents(meta.sequenceNr, deleteEventsToSeqNr)
               case s @ SnapshotCountRetentionCriteriaImpl(_, _, false) =>
+                setup.retentionProgressSaveSnapshotEnded(state.seqNr, success = true)
                 // deleteEventsOnSnapshot == false, deletion of old snapshots
-                val deleteSnapshotsToSeqNr = s.deleteUpperSequenceNr(meta.sequenceNr)
-                internalDeleteSnapshots(s.deleteLowerSequenceNr(deleteSnapshotsToSeqNr), deleteSnapshotsToSeqNr)
+                if (!setup.isOnlyOneSnapshot) {
+                  val deleteSnapshotsToSeqNr = s.deleteUpperSequenceNr(meta.sequenceNr)
+                  setup.retentionProgressDeleteSnapshotsStarted(deleteSnapshotsToSeqNr)
+                  internalDeleteSnapshots(deleteSnapshotsToSeqNr)
+                }
               case unexpected => throw new IllegalStateException(s"Unexpected retention criteria: $unexpected")
             }
           }
@@ -910,6 +948,8 @@ private[pekko] object Running {
           Some(SnapshotCompleted(SnapshotMetadata.fromClassic(meta)))
 
         case SaveSnapshotFailure(meta, error) =>
+          if (snapshotReason == SnapshotWithRetention)
+            setup.retentionProgressSaveSnapshotEnded(state.seqNr, success = false)
           setup.internalLogger.warn2("Failed to save snapshot given metadata [{}] due to: {}", meta, error.getMessage)
           Some(SnapshotFailed(SnapshotMetadata.fromClassic(meta), error))
 
@@ -1009,18 +1049,23 @@ private[pekko] object Running {
     val signal = response match {
       case DeleteMessagesSuccess(toSequenceNr) =>
         setup.internalLogger.debug("Persistent events to sequenceNr [{}] deleted successfully.", toSequenceNr)
+        setup.retentionProgressDeleteEventsEnded(toSequenceNr, success = true)
         setup.retention match {
           case DisabledRetentionCriteria             => // no further actions
-          case s: SnapshotCountRetentionCriteriaImpl =>
-            // The reason for -1 is that a snapshot at the exact toSequenceNr is still useful and the events
-            // after that can be replayed after that snapshot, but replaying the events after toSequenceNr without
-            // starting at the snapshot at toSequenceNr would be invalid.
-            val deleteSnapshotsToSeqNr = toSequenceNr - 1
-            internalDeleteSnapshots(s.deleteLowerSequenceNr(deleteSnapshotsToSeqNr), deleteSnapshotsToSeqNr)
+          case _: SnapshotCountRetentionCriteriaImpl =>
+            if (!setup.isOnlyOneSnapshot) {
+              // The reason for -1 is that a snapshot at the exact toSequenceNr is still useful and the events
+              // after that can be replayed after that snapshot, but replaying the events after toSequenceNr without
+              // starting at the snapshot at toSequenceNr would be invalid.
+              val deleteSnapshotsToSeqNr = toSequenceNr - 1
+              setup.retentionProgressDeleteSnapshotsStarted(deleteSnapshotsToSeqNr)
+              internalDeleteSnapshots(deleteSnapshotsToSeqNr)
+            }
           case unexpected => throw new IllegalStateException(s"Unexpected retention criteria: $unexpected")
         }
         Some(DeleteEventsCompleted(toSequenceNr))
       case DeleteMessagesFailure(e, toSequenceNr) =>
+        setup.retentionProgressDeleteEventsEnded(toSequenceNr, success = false)
         Some(DeleteEventsFailed(toSequenceNr, e))
       case _ =>
         None
@@ -1041,8 +1086,10 @@ private[pekko] object Running {
   def onDeleteSnapshotResponse(response: SnapshotProtocol.Response, state: S): Behavior[InternalProtocol] = {
     val signal = response match {
       case DeleteSnapshotsSuccess(criteria) =>
+        setup.retentionProgressDeleteSnapshotsEnded(criteria.maxSequenceNr, success = true)
         Some(DeleteSnapshotsCompleted(DeletionTarget.Criteria(SnapshotSelectionCriteria.fromClassic(criteria))))
       case DeleteSnapshotsFailure(criteria, error) =>
+        setup.retentionProgressDeleteSnapshotsEnded(criteria.maxSequenceNr, success = false)
         Some(DeleteSnapshotsFailed(DeletionTarget.Criteria(SnapshotSelectionCriteria.fromClassic(criteria)), error))
       case DeleteSnapshotSuccess(meta) =>
         Some(DeleteSnapshotsCompleted(DeletionTarget.Individual(SnapshotMetadata.fromClassic(meta))))

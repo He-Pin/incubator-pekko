@@ -72,7 +72,7 @@ import pekko.util.OptionVal
   // when the adapter is used for the user guardian (which avoids touching context until it is safe)
   private var _ctx: ActorContextAdapter[T] = _
   def ctx: ActorContextAdapter[T] = {
-    if (_ctx eq null) _ctx = new ActorContextAdapter[T](context, this)
+    if (_ctx eq null) _ctx = new ActorContextAdapter[T](this)
     _ctx
   }
 
@@ -229,7 +229,7 @@ import pekko.util.OptionVal
       super.unhandled(other)
   }
 
-  override val supervisorStrategy = classic.OneForOneStrategy(loggingEnabled = false) {
+  final override def supervisorStrategy = classic.OneForOneStrategy(loggingEnabled = false) {
     case ex =>
       ctx.setCurrentActorThread()
       try ex match {

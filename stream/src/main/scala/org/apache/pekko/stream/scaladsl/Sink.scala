@@ -400,8 +400,26 @@ object Sink {
       fanOutStrategy: Int => Graph[UniformFanOutShape[T, U], NotUsed]): Sink[T, immutable.Seq[M]] =
     sinks match {
       case immutable.Seq()     => Sink.cancelled.mapMaterializedValue(_ => Nil)
-      case immutable.Seq(sink) => sink.asInstanceOf[Sink[T, M]].mapMaterializedValue(_ :: Nil)
-      case _                   =>
+      case immutable.Seq(sink) =>
+        // Single-sink optimization: bypass the fan-out strategy if and only if the strategy
+        // is type-preserving (T == U), marked by the TypePreservingFanOut trait.
+        // For type-transforming strategies, we MUST route through the strategy even for a
+        // single sink. Same design as Source.combine — see #2723.
+        val strategyGraph = fanOutStrategy(1)
+        strategyGraph match {
+          case _: pekko.stream.TypePreservingFanOut =>
+            // Type-preserving (T == U): safe to bypass the strategy with a direct pass-through.
+            Sink.fromGraph(sink).asInstanceOf[Sink[T, M]].mapMaterializedValue(_ :: Nil)
+          case _ =>
+            // Not type-preserving or unknown: route through the fan-out strategy.
+            Sink.fromGraph(GraphDSL.create(sinks) { implicit b => shapes =>
+              import GraphDSL.Implicits._
+              val c = b.add(strategyGraph)
+              c.out(0) ~> shapes.head
+              SinkShape(c.in)
+            })
+        }
+      case _ =>
         Sink.fromGraph(GraphDSL.create(sinks) { implicit b => shapes =>
           import GraphDSL.Implicits._
           val c = b.add(fanOutStrategy(sinks.size))
@@ -732,6 +750,24 @@ object Sink {
    */
   def futureSink[T, M](future: Future[Sink[T, M]]): Sink[T, Future[M]] =
     lazyFutureSink[T, M](() => future)
+
+  /**
+   * Turn a `Future[Sink]` into a Sink that will consume the values of the source when the future completes
+   * successfully. If the `Future` is completed with a failure the stream is failed.
+   *
+   * Unlike [[futureSink]] and [[lazyFutureSink]], this operator materializes the inner sink as soon as the future
+   * completes, even if no elements have arrived yet. This means empty streams complete normally rather than failing
+   * with [[NeverMaterializedException]]. At most one element that arrives before the future completes is buffered.
+   *
+   * The materialized future value is completed with the materialized value of the inner sink once it has been
+   * materialized, or failed if the future itself fails or if materialization of the inner sink fails. Upstream
+   * failures or downstream cancellations that occur before the inner sink is materialized are propagated through
+   * the inner sink rather than failing the materialized value directly.
+   *
+   * @since 1.5.0
+   */
+  def eagerFutureSink[T, M](future: Future[Sink[T, M]]): Sink[T, Future[M]] =
+    Sink.fromGraph(new EagerFutureSink(future))
 
   /**
    * Defers invoking the `create` function to create a sink until there is a first element passed from upstream.

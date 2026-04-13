@@ -87,6 +87,7 @@ These built-in sinks are available from @scala[`org.apache.pekko.stream.scaladsl
 |Sink|<a name="seq"></a>@ref[seq](Sink/seq.md)|Collect values emitted from the stream into a collection.|
 |Sink|<a name="source"></a>@ref[source](Sink/source.md)|A `Sink` that materializes this `Sink` itself as a `Source`, the returning `Source` can only have one subscriber.|
 |Sink|<a name="takelast"></a>@ref[takeLast](Sink/takeLast.md)|Collect the last `n` values emitted from the stream into a collection.|
+|Sink|<a name="watchtermination"></a>@ref[watchTermination](Sink/watchTermination.md)|Wraps a given `Sink` with a termination watcher, materializing to a @scala[`Future[Done]`] @java[`CompletionStage<Done>`] that signals when the stream terminates.|
 
 ## Additional Sink and Source converters
 
@@ -615,6 +616,7 @@ For more background see the @ref[Error Handling in Streams](../stream-error.md) 
 * [UnzipWith](UnzipWith.md)
 * [watch](Source-or-Flow/watch.md)
 * [watchTermination](Source-or-Flow/watchTermination.md)
+* [watchTermination](Sink/watchTermination.md)
 * [wireTap](Source-or-Flow/wireTap.md)
 * [withBackoff](RestartSource/withBackoff.md)
 * [withBackoff](RestartFlow/withBackoff.md)

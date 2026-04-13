@@ -793,4 +793,30 @@ object Sink {
   def lazyFutureSink[T, M](create: () => Future[Sink[T, M]]): Sink[T, Future[M]] =
     Sink.fromGraph(new LazySink(_ => create()))
 
+  /**
+   * Wraps the given [[Sink]] with a termination watcher and exposes a termination
+   * `Future[Done]` to `matF`, which combines it with the wrapped sink's materialized
+   * value into a new materialized value of type `M2`.
+   *
+   * The termination future completes with `Done` on normal stream completion or
+   * non-failure cancellation, and fails with the stream's exception on upstream failure,
+   * downstream failure, or abrupt stage termination.
+   *
+   * '''Backpressures when''' the wrapped sink backpressures
+   *
+   * '''Completes when''' upstream completes
+   *
+   * '''Cancels when''' the wrapped sink cancels
+   *
+   * @param sink the original sink to wrap
+   * @param matF a function combining the original materialized value and the termination future
+   * @tparam T the element type
+   * @tparam M the original materialized value type
+   * @tparam M2 the combined materialized value type
+   * @return a new sink that materializes to `M2`
+   * @since 1.2.0
+   */
+  def watchTermination[T, M, M2](sink: Sink[T, M])(matF: (M, Future[Done]) => M2): Sink[T, M2] =
+    Flow[T].viaMat(GraphStages.terminationWatcher)(Keep.right).toMat(sink)((f, m) => matF(m, f))
+
 }

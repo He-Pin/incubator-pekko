@@ -259,10 +259,10 @@ object ByteString {
         if (offset == length) return -1
       }
       val longCount = searchLength >>> 3
-      val pattern = SWARUtil.compilePattern(elem)
+      val pattern = if (longCount > 0) SWARUtil.compilePattern(elem) else 0L
       var i = 0
       while (i < longCount) {
-        val word = SWARUtil.getLong(bytes, offset)
+        val word = SWARUtil.getLong(bytes, offset, ByteOrder.BIG_ENDIAN)
         val result = SWARUtil.applyPattern(word, pattern)
         if (result != 0) return offset + SWARUtil.getIndex(result)
         offset += java.lang.Long.BYTES
@@ -285,16 +285,72 @@ object ByteString {
         if (offset == length) return -1
       }
       val longCount = searchLength >>> 3
-      val pattern = SWARUtil.compilePattern(elem)
+      val pattern = if (longCount > 0) SWARUtil.compilePattern(elem) else 0L
       var i = 0
       while (i < longCount) {
-        val word = SWARUtil.getLong(bytes, offset)
+        val word = SWARUtil.getLong(bytes, offset, ByteOrder.BIG_ENDIAN)
         val result = SWARUtil.applyPattern(word, pattern)
         if (result != 0) return offset + SWARUtil.getIndex(result)
         offset += java.lang.Long.BYTES
         i += 1
       }
       -1
+    }
+
+    override def lastIndexOf[B >: Byte](elem: B, end: Int): Int = {
+      elem match {
+        case byte: Byte => lastIndexOf(byte, end)
+        case _          =>
+          if (end < 0) -1
+          else {
+            var found = -1
+            var i = math.min(end, length - 1)
+            while (i >= 0 && found == -1) {
+              if (bytes(i) == elem) found = i
+              i -= 1
+            }
+            found
+          }
+      }
+    }
+
+    override def lastIndexOf(elem: Byte, end: Int): Int = {
+      val endIdx = math.min(end, length - 1)
+      if (endIdx < 0) return -1
+      val searchLength = endIdx + 1
+      // Check the rightmost partial chunk first (bytes not fitting in a full 8-byte block)
+      val tailBytes = searchLength & 7
+      if (tailBytes > 0) {
+        val tailStart = searchLength - tailBytes
+        val index = unrolledLastIndexOf(tailStart, tailBytes, elem)
+        if (index != -1) return index
+        if (tailStart == 0) return -1
+      }
+      // Scan full 8-byte chunks from right to left
+      var chunkStart = searchLength - tailBytes - 8
+      if (chunkStart >= 0) {
+        val pattern = SWARUtil.compilePattern(elem)
+        while (chunkStart >= 0) {
+          val word = SWARUtil.getLong(bytes, chunkStart, ByteOrder.BIG_ENDIAN)
+          val result = SWARUtil.applyPattern(word, pattern)
+          if (result != 0) return chunkStart + SWARUtil.getLastIndex(result)
+          chunkStart -= 8
+        }
+      }
+      -1
+    }
+
+    // Searches byteCount bytes (1-7) starting at fromIndex from highest to lowest index,
+    // returning the rightmost (last) match, or -1 if not found.
+    private def unrolledLastIndexOf(fromIndex: Int, byteCount: Int, value: Byte): Int = {
+      if (byteCount >= 7 && bytes(fromIndex + 6) == value) fromIndex + 6
+      else if (byteCount >= 6 && bytes(fromIndex + 5) == value) fromIndex + 5
+      else if (byteCount >= 5 && bytes(fromIndex + 4) == value) fromIndex + 4
+      else if (byteCount >= 4 && bytes(fromIndex + 3) == value) fromIndex + 3
+      else if (byteCount >= 3 && bytes(fromIndex + 2) == value) fromIndex + 2
+      else if (byteCount >= 2 && bytes(fromIndex + 1) == value) fromIndex + 1
+      else if (bytes(fromIndex) == value) fromIndex
+      else -1
     }
 
     private def unrolledFirstIndexOf(fromIndex: Int, byteCount: Int, value: Byte): Int = {
@@ -350,6 +406,19 @@ object ByteString {
     override def toArrayUnsafe(): Array[Byte] = bytes
 
     override def asInputStream: InputStream = new UnsynchronizedByteArrayInputStream(bytes)
+
+    private[pekko] override def readShortBEUnchecked(offset: Int): Short =
+      SWARUtil.getShort(bytes, offset, ByteOrder.BIG_ENDIAN)
+    private[pekko] override def readShortLEUnchecked(offset: Int): Short =
+      SWARUtil.getShort(bytes, offset, ByteOrder.LITTLE_ENDIAN)
+    private[pekko] override def readIntBEUnchecked(offset: Int): Int =
+      SWARUtil.getInt(bytes, offset, ByteOrder.BIG_ENDIAN)
+    private[pekko] override def readIntLEUnchecked(offset: Int): Int =
+      SWARUtil.getInt(bytes, offset, ByteOrder.LITTLE_ENDIAN)
+    private[pekko] override def readLongBEUnchecked(offset: Int): Long =
+      SWARUtil.getLong(bytes, offset, ByteOrder.BIG_ENDIAN)
+    private[pekko] override def readLongLEUnchecked(offset: Int): Long =
+      SWARUtil.getLong(bytes, offset, ByteOrder.LITTLE_ENDIAN)
   }
 
   /** INTERNAL API: ByteString backed by exactly one array, with start / end markers */
@@ -518,10 +587,10 @@ object ByteString {
         if (offset == length) return -1
       }
       val longCount = searchLength >>> 3
-      val pattern = SWARUtil.compilePattern(elem)
+      val pattern = if (longCount > 0) SWARUtil.compilePattern(elem) else 0L
       var i = 0
       while (i < longCount) {
-        val word = SWARUtil.getLong(bytes, startIndex + offset)
+        val word = SWARUtil.getLong(bytes, startIndex + offset, ByteOrder.BIG_ENDIAN)
         val result = SWARUtil.applyPattern(word, pattern)
         if (result != 0) return offset + SWARUtil.getIndex(result)
         offset += java.lang.Long.BYTES
@@ -544,10 +613,10 @@ object ByteString {
         if (offset == length) return -1
       }
       val longCount = searchLength >>> 3
-      val pattern = SWARUtil.compilePattern(elem)
+      val pattern = if (longCount > 0) SWARUtil.compilePattern(elem) else 0L
       var i = 0
       while (i < longCount) {
-        val word = SWARUtil.getLong(bytes, startIndex + offset)
+        val word = SWARUtil.getLong(bytes, startIndex + offset, ByteOrder.BIG_ENDIAN)
         val result = SWARUtil.applyPattern(word, pattern)
         if (result != 0) return offset + SWARUtil.getIndex(result)
         offset += java.lang.Long.BYTES
@@ -555,6 +624,49 @@ object ByteString {
       }
       -1
 
+    }
+
+    override def lastIndexOf[B >: Byte](elem: B, end: Int): Int = {
+      elem match {
+        case byte: Byte => lastIndexOf(byte, end)
+        case _          =>
+          if (end < 0) -1
+          else {
+            var found = -1
+            var i = math.min(end, length - 1)
+            while (i >= 0 && found == -1) {
+              if (bytes(startIndex + i) == elem) found = i
+              i -= 1
+            }
+            found
+          }
+      }
+    }
+
+    override def lastIndexOf(elem: Byte, end: Int): Int = {
+      val endIdx = math.min(end, length - 1)
+      if (endIdx < 0) return -1
+      val searchLength = endIdx + 1
+      // Check the rightmost partial chunk first (bytes not fitting in a full 8-byte block)
+      val tailBytes = searchLength & 7
+      if (tailBytes > 0) {
+        val tailStart = searchLength - tailBytes
+        val index = unrolledLastIndexOf(startIndex + tailStart, tailBytes, elem)
+        if (index != -1) return index - startIndex
+        if (tailStart == 0) return -1
+      }
+      // Scan full 8-byte chunks from right to left
+      var chunkStart = searchLength - tailBytes - 8
+      if (chunkStart >= 0) {
+        val pattern = SWARUtil.compilePattern(elem)
+        while (chunkStart >= 0) {
+          val word = SWARUtil.getLong(bytes, startIndex + chunkStart, ByteOrder.BIG_ENDIAN)
+          val result = SWARUtil.applyPattern(word, pattern)
+          if (result != 0) return chunkStart + SWARUtil.getLastIndex(result)
+          chunkStart -= 8
+        }
+      }
+      -1
     }
 
     // the calling code already adds the startIndex so this method does not need to
@@ -572,6 +684,20 @@ object ByteString {
       else if (bytes(fromIndex + 5) == value) fromIndex + 5
       else if (byteCount == 6) -1
       else if (bytes(fromIndex + 6) == value) fromIndex + 6
+      else -1
+    }
+
+    // the calling code already adds the startIndex so this method does not need to.
+    // Searches byteCount bytes (1-7) starting at fromIndex from highest to lowest index,
+    // returning the rightmost (last) match, or -1 if not found.
+    private def unrolledLastIndexOf(fromIndex: Int, byteCount: Int, value: Byte): Int = {
+      if (byteCount >= 7 && bytes(fromIndex + 6) == value) fromIndex + 6
+      else if (byteCount >= 6 && bytes(fromIndex + 5) == value) fromIndex + 5
+      else if (byteCount >= 5 && bytes(fromIndex + 4) == value) fromIndex + 4
+      else if (byteCount >= 4 && bytes(fromIndex + 3) == value) fromIndex + 3
+      else if (byteCount >= 3 && bytes(fromIndex + 2) == value) fromIndex + 2
+      else if (byteCount >= 2 && bytes(fromIndex + 1) == value) fromIndex + 1
+      else if (bytes(fromIndex) == value) fromIndex
       else -1
     }
 
@@ -593,6 +719,19 @@ object ByteString {
 
     override def asInputStream: InputStream =
       new UnsynchronizedByteArrayInputStream(bytes, startIndex, length)
+
+    private[pekko] override def readShortBEUnchecked(offset: Int): Short =
+      SWARUtil.getShort(bytes, startIndex + offset, ByteOrder.BIG_ENDIAN)
+    private[pekko] override def readShortLEUnchecked(offset: Int): Short =
+      SWARUtil.getShort(bytes, startIndex + offset, ByteOrder.LITTLE_ENDIAN)
+    private[pekko] override def readIntBEUnchecked(offset: Int): Int =
+      SWARUtil.getInt(bytes, startIndex + offset, ByteOrder.BIG_ENDIAN)
+    private[pekko] override def readIntLEUnchecked(offset: Int): Int =
+      SWARUtil.getInt(bytes, startIndex + offset, ByteOrder.LITTLE_ENDIAN)
+    private[pekko] override def readLongBEUnchecked(offset: Int): Long =
+      SWARUtil.getLong(bytes, startIndex + offset, ByteOrder.BIG_ENDIAN)
+    private[pekko] override def readLongLEUnchecked(offset: Int): Long =
+      SWARUtil.getLong(bytes, startIndex + offset, ByteOrder.LITTLE_ENDIAN)
   }
 
   private[pekko] object ByteStrings extends Companion {
@@ -895,6 +1034,64 @@ object ByteString {
       }
     }
 
+    override def lastIndexOf[B >: Byte](elem: B, end: Int): Int = {
+      if (end < 0) -1
+      else {
+        val byteStringsLast = bytestrings.size - 1
+
+        @tailrec
+        def find(bsIdx: Int, relativeIndex: Int, len: Int): Int = {
+          if (bsIdx < 0) -1
+          else {
+            val bs = bytestrings(bsIdx)
+            val bsStartIndex = len - bs.length
+
+            if (relativeIndex < bsStartIndex || bs.isEmpty) {
+              if (bsIdx == 0) -1
+              else find(bsIdx - 1, relativeIndex, bsStartIndex)
+            } else {
+              val subIndexOf = bs.lastIndexOf(elem, relativeIndex - bsStartIndex)
+              if (subIndexOf < 0) {
+                if (bsIdx == 0) -1
+                else find(bsIdx - 1, relativeIndex, bsStartIndex)
+              } else subIndexOf + bsStartIndex
+            }
+          }
+        }
+
+        find(byteStringsLast, math.min(end, length - 1), length)
+      }
+    }
+
+    override def lastIndexOf(elem: Byte, end: Int): Int = {
+      if (end < 0) -1
+      else {
+        val byteStringsLast = bytestrings.size - 1
+
+        @tailrec
+        def find(bsIdx: Int, relativeIndex: Int, len: Int): Int = {
+          if (bsIdx < 0) -1
+          else {
+            val bs = bytestrings(bsIdx)
+            val bsStartIndex = len - bs.length
+
+            if (relativeIndex < bsStartIndex || bs.isEmpty) {
+              if (bsIdx == 0) -1
+              else find(bsIdx - 1, relativeIndex, bsStartIndex)
+            } else {
+              val subIndexOf = bs.lastIndexOf(elem, relativeIndex - bsStartIndex)
+              if (subIndexOf < 0) {
+                if (bsIdx == 0) -1
+                else find(bsIdx - 1, relativeIndex, bsStartIndex)
+              } else subIndexOf + bsStartIndex
+            }
+          }
+        }
+
+        find(byteStringsLast, math.min(end, length - 1), length)
+      }
+    }
+
     override def copyToArray[B >: Byte](dest: Array[B], start: Int, len: Int): Int = {
       if (bytestrings.size == 1) bytestrings.head.copyToArray(dest, start, len)
       else {
@@ -970,6 +1167,9 @@ sealed abstract class ByteString
   override final def className: String = "ByteString"
 
   override def isEmpty: Boolean = length == 0
+
+  // Cache the hash code since ByteString is immutable
+  override lazy val hashCode: Int = super.hashCode()
 
   // override protected[this] def newBuilder: ByteStringBuilder = ByteString.newBuilder
 
@@ -1055,6 +1255,31 @@ sealed abstract class ByteString
    *  @since 1.1.0
    */
   def indexOf(elem: Byte): Int = indexOf(elem, 0)
+
+  /**
+   * Finds index of last occurrence of some byte in this ByteString before or at some end index.
+   *
+   * Similar to lastIndexOf, but it avoids boxing if the value is already a byte.
+   *
+   *  @param   elem   the element value to search for.
+   *  @param   end    the end index
+   *  @return  the index `<= end` of the last element of this ByteString that is equal (as determined by `==`)
+   *           to `elem`, or `-1`, if none exists.
+   *  @since 2.0.0
+   */
+  def lastIndexOf(elem: Byte, end: Int): Int = lastIndexOf[Byte](elem, end)
+
+  /**
+   * Finds index of last occurrence of some byte in this ByteString.
+   *
+   * Similar to lastIndexOf, but it avoids boxing if the value is already a byte.
+   *
+   *  @param   elem   the element value to search for.
+   *  @return  the index of the last element of this ByteString that is equal (as determined by `==`)
+   *           to `elem`, or `-1`, if none exists.
+   *  @since 2.0.0
+   */
+  def lastIndexOf(elem: Byte): Int = lastIndexOf(elem, length - 1)
 
   override def indexOfSlice[B >: Byte](slice: scala.collection.Seq[B], from: Int): Int = {
     // this is only called if the first byte matches, so we can skip that check
@@ -1336,6 +1561,157 @@ sealed abstract class ByteString
    * map method that will automatically cast Int back into Byte.
    */
   final def mapI(f: Byte => Int): ByteString = map(f.andThen(_.toByte))
+
+  protected final def checkReadBounds(offset: Int, size: Int): Unit =
+    if (offset < 0 || offset + size > length)
+      throw new IndexOutOfBoundsException(
+        s"offset $offset with required size $size exceeds ByteString length $length")
+
+  /**
+   * Read a short from this ByteString at the given offset in big-endian byte order.
+   *
+   * @param offset the offset to read from
+   * @return the short value
+   * @throws IndexOutOfBoundsException if the offset is negative or there are fewer than 2 bytes available from offset
+   * @since 2.0.0
+   */
+  def readShortBE(offset: Int): Short = {
+    checkReadBounds(offset, 2)
+    readShortBEUnchecked(offset)
+  }
+
+  /**
+   * Read a short from this ByteString at the given offset in little-endian byte order.
+   *
+   * @param offset the offset to read from
+   * @return the short value
+   * @throws IndexOutOfBoundsException if the offset is negative or there are fewer than 2 bytes available from offset
+   * @since 2.0.0
+   */
+  def readShortLE(offset: Int): Short = {
+    checkReadBounds(offset, 2)
+    readShortLEUnchecked(offset)
+  }
+
+  /**
+   * Read an int from this ByteString at the given offset in big-endian byte order.
+   *
+   * @param offset the offset to read from
+   * @return the int value
+   * @throws IndexOutOfBoundsException if the offset is negative or there are fewer than 4 bytes available from offset
+   * @since 2.0.0
+   */
+  def readIntBE(offset: Int): Int = {
+    checkReadBounds(offset, 4)
+    readIntBEUnchecked(offset)
+  }
+
+  /**
+   * Read an int from this ByteString at the given offset in little-endian byte order.
+   *
+   * @param offset the offset to read from
+   * @return the int value
+   * @throws IndexOutOfBoundsException if the offset is negative or there are fewer than 4 bytes available from offset
+   * @since 2.0.0
+   */
+  def readIntLE(offset: Int): Int = {
+    checkReadBounds(offset, 4)
+    readIntLEUnchecked(offset)
+  }
+
+  /**
+   * Read a long from this ByteString at the given offset in big-endian byte order.
+   *
+   * @param offset the offset to read from
+   * @return the long value
+   * @throws IndexOutOfBoundsException if the offset is negative or there are fewer than 8 bytes available from offset
+   * @since 2.0.0
+   */
+  def readLongBE(offset: Int): Long = {
+    checkReadBounds(offset, 8)
+    readLongBEUnchecked(offset)
+  }
+
+  /**
+   * Read a long from this ByteString at the given offset in little-endian byte order.
+   *
+   * @param offset the offset to read from
+   * @return the long value
+   * @throws IndexOutOfBoundsException if the offset is negative or there are fewer than 8 bytes available from offset
+   * @since 2.0.0
+   */
+  def readLongLE(offset: Int): Long = {
+    checkReadBounds(offset, 8)
+    readLongLEUnchecked(offset)
+  }
+
+  /**
+   * INTERNAL API
+   * Optimized in subclasses when we have byte arrays where we can use {@link SWARUtil}
+   * methods.
+   */
+  private[pekko] def readShortBEUnchecked(offset: Int): Short =
+    ((apply(offset) & 0xFF) << 8 | (apply(offset + 1) & 0xFF)).toShort
+
+  /**
+   * INTERNAL API
+   * Optimized in subclasses when we have byte arrays where we can use {@link SWARUtil}
+   * methods.
+   */
+  private[pekko] def readShortLEUnchecked(offset: Int): Short =
+    ((apply(offset) & 0xFF) | (apply(offset + 1) & 0xFF) << 8).toShort
+
+  /**
+   * INTERNAL API
+   * Optimized in subclasses when we have byte arrays where we can use {@link SWARUtil}
+   * methods.
+   */
+  private[pekko] def readIntBEUnchecked(offset: Int): Int =
+    (apply(offset) & 0xFF) << 24 |
+    (apply(offset + 1) & 0xFF) << 16 |
+    (apply(offset + 2) & 0xFF) << 8 |
+    (apply(offset + 3) & 0xFF)
+
+  /**
+   * INTERNAL API
+   * Optimized in subclasses when we have byte arrays where we can use {@link SWARUtil}
+   * methods.
+   */
+  private[pekko] def readIntLEUnchecked(offset: Int): Int =
+    (apply(offset) & 0xFF) |
+    (apply(offset + 1) & 0xFF) << 8 |
+    (apply(offset + 2) & 0xFF) << 16 |
+    (apply(offset + 3) & 0xFF) << 24
+
+  /**
+   * INTERNAL API
+   * Optimized in subclasses when we have byte arrays where we can use {@link SWARUtil}
+   * methods.
+   */
+  private[pekko] def readLongBEUnchecked(offset: Int): Long =
+    (apply(offset).toLong & 0xFF) << 56 |
+    (apply(offset + 1).toLong & 0xFF) << 48 |
+    (apply(offset + 2).toLong & 0xFF) << 40 |
+    (apply(offset + 3).toLong & 0xFF) << 32 |
+    (apply(offset + 4).toLong & 0xFF) << 24 |
+    (apply(offset + 5).toLong & 0xFF) << 16 |
+    (apply(offset + 6).toLong & 0xFF) << 8 |
+    (apply(offset + 7).toLong & 0xFF)
+
+  /**
+   * INTERNAL API
+   * Optimized in subclasses when we have byte arrays where we can use {@link SWARUtil}
+   * methods.
+   */
+  private[pekko] def readLongLEUnchecked(offset: Int): Long =
+    (apply(offset).toLong & 0xFF) |
+    (apply(offset + 1).toLong & 0xFF) << 8 |
+    (apply(offset + 2).toLong & 0xFF) << 16 |
+    (apply(offset + 3).toLong & 0xFF) << 24 |
+    (apply(offset + 4).toLong & 0xFF) << 32 |
+    (apply(offset + 5).toLong & 0xFF) << 40 |
+    (apply(offset + 6).toLong & 0xFF) << 48 |
+    (apply(offset + 7).toLong & 0xFF) << 56
 
   def map[A](f: Byte => Byte): ByteString = fromSpecific(super.map(f))
 }

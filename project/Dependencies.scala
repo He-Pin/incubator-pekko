@@ -105,9 +105,11 @@ object Dependencies {
       .excludeAll(ExclusionRule(organization = "org.scala-lang"))
     val jacksonCbor3 = "tools.jackson.dataformat" % "jackson-dataformat-cbor" % jacksonVersion3
 
-    val lz4Java = "at.yawk.lz4" % "lz4-java" % "1.10.4"
+    val lz4Java = "at.yawk.lz4" % "lz4-java" % "1.11.0"
 
     val logback = "ch.qos.logback" % "logback-classic" % logbackVersion
+
+    val jspecify = "org.jspecify" % "jspecify" % "1.0.0" % Optional
 
     object Docs {
       val sprayJson = "io.spray" %% "spray-json" % "1.3.6" % Test
@@ -287,6 +289,7 @@ object Dependencies {
   lazy val slf4j = l ++= Seq(slf4jApi, TestDependencies.logback)
 
   lazy val persistence = l ++= Seq(
+    jspecify,
     Provided.levelDB,
     Provided.levelDBNative,
     TestDependencies.scalatest,
@@ -296,6 +299,7 @@ object Dependencies {
     TestDependencies.commonsCodec)
 
   lazy val persistenceQuery = l ++= Seq(
+    jspecify,
     TestDependencies.scalatest,
     TestDependencies.junit,
     TestDependencies.commonsIo,
@@ -308,11 +312,18 @@ object Dependencies {
     Provided.levelDB,
     Provided.levelDBNative)
 
-  lazy val persistenceTestKit = l ++= Seq(TestDependencies.scalatest, TestDependencies.logback)
+  lazy val persistenceTestKit = l ++= Seq(
+    jspecify,
+    TestDependencies.scalatest,
+    TestDependencies.logback)
 
   lazy val persistenceTypedTests = l ++= Seq(TestDependencies.scalatest, TestDependencies.logback)
 
-  lazy val persistenceShared = l ++= Seq(Provided.levelDB, Provided.levelDBNative, TestDependencies.logback)
+  lazy val persistenceShared = l ++= Seq(
+    jspecify,
+    Provided.levelDB,
+    Provided.levelDBNative,
+    TestDependencies.logback)
 
   lazy val jackson = l ++= Seq(
     jacksonCore,
@@ -362,9 +373,12 @@ object Dependencies {
 
   // pekko stream
 
-  lazy val stream = l ++= Seq[sbt.ModuleID](reactiveStreams, TestDependencies.scalatest)
+  lazy val stream = l ++= Seq[sbt.ModuleID](reactiveStreams, jspecify, TestDependencies.scalatest)
+
+  lazy val streamTyped = l ++= Seq[sbt.ModuleID](jspecify)
 
   lazy val streamTestkit = l ++= Seq(
+    jspecify,
     TestDependencies.scalatest,
     TestDependencies.scalatestScalaCheck,
     TestDependencies.junit)

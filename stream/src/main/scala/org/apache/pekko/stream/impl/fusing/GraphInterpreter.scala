@@ -376,40 +376,7 @@ import pekko.stream.stage._
       while (eventsRemaining > 0 && queueTail != queueHead) {
         val connection = dequeue()
         eventsRemaining -= 1
-        chaseCounter = math.min(ChaseLimit, eventsRemaining)
-
-        def reportStageError(e: Throwable): Unit = {
-          if (activeStage eq null) throw e
-          else {
-            val logAt: Logging.LogLevel = activeStage.attributes.get[LogLevels] match {
-              case Some(levels) => levels.onFailure
-              case None         => defaultErrorReportingLogLevel
-            }
-            logAt match {
-              case Logging.ErrorLevel =>
-                log.error(e, "Error in stage [{}]: {}", activeStage.toString, e.getMessage)
-              case Logging.WarningLevel =>
-                log.warning(e, "Error in stage [{}]: {}", activeStage.toString, e.getMessage)
-              case Logging.InfoLevel =>
-                log.info("Error in stage [{}]: {}", activeStage.toString, e.getMessage)
-              case Logging.DebugLevel =>
-                log.debug("Error in stage [{}]: {}", activeStage.toString, e.getMessage)
-              case _ => // Off, nop
-            }
-            activeStage.failStage(e)
-
-            // Abort chasing
-            chaseCounter = 0
-            if (chasedPush ne NoEvent) {
-              enqueue(chasedPush)
-              chasedPush = NoEvent
-            }
-            if (chasedPull ne NoEvent) {
-              enqueue(chasedPull)
-              chasedPull = NoEvent
-            }
-          }
-        }
+        chaseCounter = if (ChaseLimit < eventsRemaining) ChaseLimit else eventsRemaining
 
         /*
          * This is the "normal" event processing code which dequeues directly from the internal event queue. Since
@@ -481,6 +448,43 @@ import pekko.stream.stage._
     if (Debug) println(s"$Name ---------------- $queueStatus (running=$runningStages, shutdown=$shutdownCounters)")
     // TODO: deadlock detection
     eventsRemaining
+  }
+
+  /**
+   * Reports an error from a stage. If activeStage is null, the error is rethrown directly.
+   * Extracted from execute() loop to avoid potential closure allocation per iteration.
+   */
+  private[this] def reportStageError(e: Throwable): Unit = {
+    if (activeStage eq null) throw e
+    else {
+      val logAt: Logging.LogLevel = activeStage.attributes.get[LogLevels] match {
+        case Some(levels) => levels.onFailure
+        case None         => defaultErrorReportingLogLevel
+      }
+      logAt match {
+        case Logging.ErrorLevel =>
+          log.error(e, "Error in stage [{}]: {}", activeStage.toString, e.getMessage)
+        case Logging.WarningLevel =>
+          log.warning(e, "Error in stage [{}]: {}", activeStage.toString, e.getMessage)
+        case Logging.InfoLevel =>
+          log.info("Error in stage [{}]: {}", activeStage.toString, e.getMessage)
+        case Logging.DebugLevel =>
+          log.debug("Error in stage [{}]: {}", activeStage.toString, e.getMessage)
+        case _ => // Off, nop
+      }
+      activeStage.failStage(e)
+
+      // Abort chasing
+      chaseCounter = 0
+      if (chasedPush ne NoEvent) {
+        enqueue(chasedPush)
+        chasedPush = NoEvent
+      }
+      if (chasedPull ne NoEvent) {
+        enqueue(chasedPull)
+        chasedPull = NoEvent
+      }
+    }
   }
 
   @InternalStableApi

@@ -39,6 +39,8 @@ import org.apache.pekko.japi.Pair;
 import org.apache.pekko.japi.function.*;
 import org.apache.pekko.japi.pf.PFBuilder;
 import org.apache.pekko.stream.*;
+import org.apache.pekko.stream.javadsl.GatherCollector;
+import org.apache.pekko.stream.javadsl.Gatherer;
 import org.apache.pekko.stream.javadsl.GraphDSL.Builder;
 import org.apache.pekko.stream.scaladsl.FlowSpec;
 import org.apache.pekko.stream.stage.*;
@@ -326,6 +328,50 @@ public class FlowTest extends StreamTestJupiter {
 
     probe.expectMsgAllOf("1", "2", "3");
     Assertions.assertEquals(1, closed.get());
+  }
+
+  @Test
+  public void mustBeAbleToUseGather() throws Exception {
+    final List<String> result =
+        Source.from(Arrays.asList("A", "B", "C"))
+            .via(
+                Flow.of(String.class)
+                    .gather(
+                        () ->
+                            (elem, collector) -> collector.apply(elem)))
+            .runWith(Sink.seq(), system)
+            .toCompletableFuture()
+            .get(3, TimeUnit.SECONDS);
+    Assert.assertEquals(Arrays.asList("A", "B", "C"), result);
+  }
+
+  @Test
+  public void mustBeAbleToUseGatherWithOnComplete() throws Exception {
+    final List<String> result =
+        Source.from(Arrays.asList("A", "B", "C"))
+            .via(
+                Flow.of(String.class)
+                    .gather(
+                        () ->
+                            new Gatherer<String, String>() {
+                              private final List<String> buffer = new ArrayList<>();
+
+                              @Override
+                              public void apply(String elem, GatherCollector<String> collector) {
+                                buffer.add(elem);
+                              }
+
+                              @Override
+                              public void onComplete(GatherCollector<String> collector) {
+                                for (String s : buffer) {
+                                  collector.apply(s);
+                                }
+                              }
+                            }))
+            .runWith(Sink.seq(), system)
+            .toCompletableFuture()
+            .get(3, TimeUnit.SECONDS);
+    Assert.assertEquals(Arrays.asList("A", "B", "C"), result);
   }
 
   @Test

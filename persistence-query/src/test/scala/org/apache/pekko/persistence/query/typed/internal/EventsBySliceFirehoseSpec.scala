@@ -42,7 +42,7 @@ import pekko.stream.testkit.TestSubscriber
 import pekko.stream.testkit.TestSubscriber.OnNext
 import pekko.stream.testkit.scaladsl.TestSink
 import pekko.stream.testkit.scaladsl.TestSource
-import pekko.testkit.ASpec
+import pekko.testkit.PekkoSpec
 import pekko.testkit.WithLogCapturing
 
 object EventsBySliceFirehoseSpec {

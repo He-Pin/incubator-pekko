@@ -17,7 +17,7 @@ import java.time.{ Duration => JDuration }
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-import scala.concurrent.Promise
+import scala.concurrent.{ ExecutionContext, Promise }
 import scala.concurrent.duration._
 
 import com.typesafe.config.ConfigFactory
@@ -25,7 +25,6 @@ import org.scalatest.concurrent.Eventually
 
 import org.apache.pekko
 import pekko.NotUsed
-import pekko.dispatch.ExecutionContexts
 import pekko.persistence.Persistence
 import pekko.persistence.query.NoOffset
 import pekko.persistence.query.Offset
@@ -156,10 +155,10 @@ class EventsBySliceFirehoseSpec
     val firehoseRunning = new AtomicBoolean
     private val firehosePublisherPromise = Promise[TestPublisher.Probe[EventEnvelope[Any]]]()
     private val firehoseSource: Source[EventEnvelope[Any], NotUsed] =
-      TestSource[EventEnvelope[Any]]().watchTermination()(Keep.both).mapMaterializedValue {
+      TestSource[EventEnvelope[Any]]().watchTermination(Keep.both).mapMaterializedValue {
         case (probe, termination) =>
           firehoseRunning.set(true)
-          termination.onComplete(_ => firehoseRunning.set(false))(ExecutionContexts.parasitic)
+          termination.onComplete(_ => firehoseRunning.set(false))(ExecutionContext.parasitic)
           firehosePublisherPromise.success(probe)
           NotUsed
       }

@@ -11,17 +11,16 @@
  * Copyright (C) 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package org.apache.pekko.persistence.query.typed.scaladsl
-
-import scala.collection.immutable
+package org.apache.pekko.persistence.query.typed.javadsl
 
 import org.apache.pekko
 import pekko.NotUsed
 import pekko.annotation.ApiMayChange
+import pekko.japi.Pair
 import pekko.persistence.query.Offset
-import pekko.persistence.query.scaladsl.ReadJournal
+import pekko.persistence.query.javadsl.ReadJournal
 import pekko.persistence.query.typed.EventEnvelope
-import pekko.stream.scaladsl.Source
+import pekko.stream.javadsl.Source
 
 /**
  * A plugin may optionally support this query by implementing this trait.
@@ -45,9 +44,9 @@ trait CurrentEventsBySliceStartingFromSnapshotsQuery extends ReadJournal {
       minSlice: Int,
       maxSlice: Int,
       offset: Offset,
-      transformSnapshot: Snapshot => Event): Source[EventEnvelope[Event], NotUsed]
+      transformSnapshot: java.util.function.Function[Snapshot, Event]): Source[EventEnvelope[Event], NotUsed]
 
   def sliceForPersistenceId(persistenceId: String): Int
 
-  def sliceRanges(numberOfRanges: Int): immutable.Seq[Range]
+  def sliceRanges(numberOfRanges: Int): java.util.List[Pair[Integer, Integer]]
 }

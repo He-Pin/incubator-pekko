@@ -11,7 +11,7 @@
  * Copyright (C) 2023 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package org.apache.persistence.query.typed.internal
+package org.apache.pekko.persistence.query.typed.internal
 
 import java.time.{ Duration => JDuration }
 import java.util.concurrent.atomic.AtomicBoolean

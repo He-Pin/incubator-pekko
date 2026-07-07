@@ -315,6 +315,69 @@ class GraphInterpreterSpec extends StreamSpec with GraphInterpreterSpecKit {
       interpreter.isSuspended should be(false)
     }
 
+    "release references to completed stage logics to prevent memory leaks" in new TestSetup {
+      val source = new UpstreamProbe[Int]("source")
+      val sink = new DownstreamProbe[Int]("sink")
+      val identityStage = GraphStages.identity[Int]
+
+      builder(identityStage)
+        .connect(source, identityStage.in)
+        .connect(identityStage.out, sink)
+        .init()
+
+      lastEvents() should ===(Set.empty[TestEvent])
+
+      sink.requestOne()
+      lastEvents() should ===(Set(RequestOne(source)))
+
+      source.onNext(1)
+      lastEvents() should ===(Set(OnNext(sink, 1)))
+
+      val logicsField = interpreter.getClass.getDeclaredField("logics")
+      logicsField.setAccessible(true)
+      val logics = logicsField.get(interpreter).asInstanceOf[Array[org.apache.pekko.stream.stage.GraphStageLogic]]
+
+      logics.foreach(logic => logic should not be null)
+
+      source.onComplete()
+      lastEvents() should ===(Set(OnComplete(sink)))
+
+      interpreter.finish()
+
+      logics.foreach(logic => logic should be(null))
+    }
+
+    "release references to completed stage logics when some stages complete early" in new TestSetup {
+      val source = new UpstreamProbe[Int]("source")
+      val detachStage = detacher[Int]
+      val identityStage = GraphStages.identity[Int]
+      val sink = new DownstreamProbe[Int]("sink")
+
+      builder(detachStage, identityStage)
+        .connect(source, detachStage.shape.in)
+        .connect(detachStage.shape.out, identityStage.in)
+        .connect(identityStage.out, sink)
+        .init()
+
+      lastEvents() should ===(Set.empty[TestEvent])
+
+      sink.requestOne()
+      lastEvents() should ===(Set(RequestOne(source)))
+
+      val logicsField = interpreter.getClass.getDeclaredField("logics")
+      logicsField.setAccessible(true)
+      val logics = logicsField.get(interpreter).asInstanceOf[Array[org.apache.pekko.stream.stage.GraphStageLogic]]
+
+      logics.foreach(logic => logic should not be null)
+
+      source.onNext(1)
+      lastEvents() should ===(Set(OnNext(sink, 1), RequestOne(source)))
+
+      source.onComplete()
+
+      logics.foreach(logic => logic should be(null))
+    }
+
   }
 
 }

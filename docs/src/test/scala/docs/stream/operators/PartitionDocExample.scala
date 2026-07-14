@@ -13,7 +13,7 @@
 
 package docs.stream.operators
 
-import org.apache.pekko.actor.ActorSystem
+import pekko.actor.ActorSystem
 
 object PartitionDocExample {
 

@@ -13,7 +13,9 @@
 
 package org.apache.pekko.stream.impl
 
-import org.apache.pekko.annotation.InternalStableApi
+import org.apache.pekko
+
+import pekko.annotation.InternalStableApi
 
 /**
  * INTERNAL API

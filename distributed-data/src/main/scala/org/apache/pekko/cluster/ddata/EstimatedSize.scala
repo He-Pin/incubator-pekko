@@ -13,7 +13,9 @@
 
 package org.apache.pekko.cluster.ddata
 
-import org.apache.pekko.annotation.InternalApi
+import org.apache.pekko
+
+import pekko.annotation.InternalApi
 
 /**
  * INTERNAL API: Rough estimate in bytes of some serialized data elements. Used

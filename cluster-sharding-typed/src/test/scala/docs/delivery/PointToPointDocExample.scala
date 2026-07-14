@@ -17,7 +17,7 @@ import java.util.UUID
 
 import scala.annotation.nowarn
 
-import org.apache.pekko.actor.typed.ActorSystem
+import pekko.actor.typed.ActorSystem
 
 //#imports
 import org.apache.pekko

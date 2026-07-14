@@ -13,10 +13,10 @@
 
 package docs.persistence.testkit
 
-import org.apache.pekko.persistence.typed.PersistenceId
-import org.apache.pekko.persistence.typed.scaladsl.Effect
-import org.apache.pekko.persistence.typed.scaladsl.EventSourcedBehavior
-import org.apache.pekko.serialization.jackson.CborSerializable
+import pekko.persistence.typed.PersistenceId
+import pekko.persistence.typed.scaladsl.Effect
+import pekko.persistence.typed.scaladsl.EventSourcedBehavior
+import pekko.serialization.jackson.CborSerializable
 import com.typesafe.config.ConfigFactory
 import docs.persistence.testkit.PersistenceTestKitSampleSpec.{ Cmd, Evt, _ }
 import org.scalatest.BeforeAndAfterEach
@@ -74,7 +74,7 @@ class PersistenceTestKitSampleSpec
 //#test
 
 //#set-event-storage-policy
-import org.apache.pekko.persistence.testkit._
+import pekko.persistence.testkit._
 
 class SampleEventStoragePolicy extends EventStorage.JournalPolicies.PolicyType {
 

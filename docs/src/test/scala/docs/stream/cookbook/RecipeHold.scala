@@ -13,9 +13,9 @@
 
 package docs.stream.cookbook
 
-import org.apache.pekko.stream.Attributes
-import org.apache.pekko.stream.scaladsl.{ Sink, Source }
-import org.apache.pekko.stream.testkit._
+import pekko.stream.Attributes
+import pekko.stream.scaladsl.{ Sink, Source }
+import pekko.stream.testkit._
 
 import scala.concurrent.duration._
 

@@ -1,3 +1,4 @@
+
 /*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * license agreements; and to You under the Apache License, version 2.0:
@@ -11,7 +12,8 @@
  * Copyright (C) 2009-2022 Lightbend Inc. <https://www.lightbend.com>
  */
 
-import org.apache.pekko.persistence.{ PersistentActor, RuntimePluginConfig }
+import org.apache.pekko
+import pekko.persistence.{ PersistentActor, RuntimePluginConfig }
 import com.typesafe.config.ConfigFactory
 
 object PersistenceMultiDocSpec {

@@ -13,9 +13,9 @@
 
 package scala.docs.cluster
 
-import org.apache.pekko.cluster.Cluster
+import pekko.cluster.Cluster
 
-import org.apache.pekko.testkit.PekkoSpec
+import pekko.testkit.PekkoSpec
 import docs.CompileOnlySpec
 
 object ClusterDocSpec {

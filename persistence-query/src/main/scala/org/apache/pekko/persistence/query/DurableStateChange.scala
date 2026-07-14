@@ -13,7 +13,9 @@
 
 package org.apache.pekko.persistence.query
 
-import org.apache.pekko.annotation.DoNotInherit
+import org.apache.pekko
+
+import pekko.annotation.DoNotInherit
 
 /**
  * The `DurableStateStoreQuery` stream elements for `DurableStateStoreQuery`.

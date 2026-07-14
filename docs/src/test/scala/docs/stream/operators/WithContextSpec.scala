@@ -13,7 +13,7 @@
 
 package docs.stream.operators
 
-import org.apache.pekko.testkit.PekkoSpec
+import pekko.testkit.PekkoSpec
 
 class WithContextSpec extends PekkoSpec {
 

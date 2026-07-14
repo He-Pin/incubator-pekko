@@ -13,7 +13,9 @@
 
 package org.apache.pekko.persistence
 
-import org.apache.pekko.annotation.InternalApi
+import org.apache.pekko
+
+import pekko.annotation.InternalApi
 
 /**
  * INTERNAL API

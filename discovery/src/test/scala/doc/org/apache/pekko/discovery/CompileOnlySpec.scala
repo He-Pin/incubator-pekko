@@ -13,7 +13,7 @@
 
 package doc.org.apache.pekko.discovery
 
-import org.apache.pekko.actor.ActorSystem
+import pekko.actor.ActorSystem
 
 import scala.concurrent.Future
 import scala.concurrent.duration._

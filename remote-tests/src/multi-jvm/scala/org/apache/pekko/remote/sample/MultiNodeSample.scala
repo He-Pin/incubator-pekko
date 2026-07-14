@@ -17,7 +17,7 @@ package org.apache.pekko.remote.sample
 //#package
 
 //#config
-import org.apache.pekko.remote.testkit.{ MultiNodeConfig, STMultiNodeSpec }
+import pekko.remote.testkit.{ MultiNodeConfig, STMultiNodeSpec }
 
 object MultiNodeSampleConfig extends MultiNodeConfig {
   val node1 = role("node1")

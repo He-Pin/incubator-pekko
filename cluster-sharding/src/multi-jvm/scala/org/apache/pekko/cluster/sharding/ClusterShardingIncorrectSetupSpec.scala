@@ -13,7 +13,9 @@
 
 package org.apache.pekko.cluster.sharding
 
-import org.apache.pekko.testkit._
+import org.apache.pekko
+
+import pekko.testkit._
 
 object ClusterShardingIncorrectSetupSpecConfig
     extends MultiNodeClusterShardingConfig(

@@ -13,7 +13,7 @@
 
 package docs.org.apache.pekko.cluster.sharding.typed
 
-import org.apache.pekko.Done
+import pekko.Done
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future

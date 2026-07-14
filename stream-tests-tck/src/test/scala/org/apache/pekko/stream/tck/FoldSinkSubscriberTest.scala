@@ -13,7 +13,9 @@
 
 package org.apache.pekko.stream.tck
 
-import org.apache.pekko.stream.scaladsl._
+import org.apache.pekko
+
+import pekko.stream.scaladsl._
 
 import org.reactivestreams.Subscriber
 

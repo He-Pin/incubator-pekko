@@ -13,7 +13,9 @@
 
 package org.apache.pekko.actor.typed.delivery.internal
 
-import org.apache.pekko.annotation.InternalApi
+import org.apache.pekko
+
+import pekko.annotation.InternalApi
 
 /**
  * INTERNAL API

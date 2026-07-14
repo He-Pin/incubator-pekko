@@ -13,7 +13,9 @@
 
 package org.apache.pekko.testkit
 
-import org.apache.pekko.actor.{ Actor, ActorRef, Props }
+import org.apache.pekko
+
+import pekko.actor.{ Actor, ActorRef, Props }
 
 /**
  * A collection of common actor patterns used in tests.

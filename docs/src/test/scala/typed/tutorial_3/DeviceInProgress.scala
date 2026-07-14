@@ -20,8 +20,8 @@ package com.example
 //#read-protocol-1
  */
 
-import org.apache.pekko.actor.typed.PostStop
-import org.apache.pekko.actor.typed.Signal
+import pekko.actor.typed.PostStop
+import pekko.actor.typed.Signal
 
 object DeviceInProgress1 {
 

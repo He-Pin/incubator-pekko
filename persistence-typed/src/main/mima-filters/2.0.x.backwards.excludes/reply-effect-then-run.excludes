@@ -1,0 +1,23 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License. You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ReplyEffect is @DoNotInherit; all supported implementations are owned by Pekko.
+# EffectImpl implements these methods. Exclude only the six newly declared abstract thenRun overloads.
+ProblemFilters.exclude[ReversedMissingMethodProblem]("org.apache.pekko.persistence.typed.scaladsl.ReplyEffect.thenRun(scala.Function1)org.apache.pekko.persistence.typed.scaladsl.ReplyEffect")
+ProblemFilters.exclude[ReversedMissingMethodProblem]("org.apache.pekko.persistence.typed.javadsl.ReplyEffect.thenRun(org.apache.pekko.japi.function.Procedure)org.apache.pekko.persistence.typed.javadsl.ReplyEffect")
+ProblemFilters.exclude[ReversedMissingMethodProblem]("org.apache.pekko.persistence.typed.javadsl.ReplyEffect.thenRun(org.apache.pekko.japi.function.Effect)org.apache.pekko.persistence.typed.javadsl.ReplyEffect")
+ProblemFilters.exclude[ReversedMissingMethodProblem]("org.apache.pekko.persistence.typed.state.scaladsl.ReplyEffect.thenRun(scala.Function1)org.apache.pekko.persistence.typed.state.scaladsl.ReplyEffect")
+ProblemFilters.exclude[ReversedMissingMethodProblem]("org.apache.pekko.persistence.typed.state.javadsl.ReplyEffect.thenRun(org.apache.pekko.japi.function.Procedure)org.apache.pekko.persistence.typed.state.javadsl.ReplyEffect")
+ProblemFilters.exclude[ReversedMissingMethodProblem]("org.apache.pekko.persistence.typed.state.javadsl.ReplyEffect.thenRun(org.apache.pekko.japi.function.Effect)org.apache.pekko.persistence.typed.state.javadsl.ReplyEffect")

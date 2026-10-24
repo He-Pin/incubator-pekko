@@ -16,6 +16,7 @@ package org.apache.pekko.persistence.typed.state.internal
 import org.apache.pekko
 import pekko.actor.typed.ActorRef
 import pekko.annotation.InternalApi
+import pekko.japi.function
 import pekko.persistence.typed.state.javadsl
 import pekko.persistence.typed.state.scaladsl
 
@@ -28,6 +29,12 @@ private[pekko] abstract class EffectImpl[State]
     with scaladsl.EffectBuilder[State] {
   /* The state that will be persisted in this effect */
   override def state: Option[State] = None
+
+  override def thenRun[NewState <: State](callback: function.Procedure[NewState]): EffectImpl[State] =
+    CompositeEffect(this, SideEffect[State](s => callback.apply(s.asInstanceOf[NewState])))
+
+  override def thenRun(callback: function.Effect): EffectImpl[State] =
+    CompositeEffect(this, SideEffect[State]((_: State) => callback.apply()))
 
   override def thenRun(chainedEffect: State => Unit): EffectImpl[State] =
     CompositeEffect(this, new Callback[State](chainedEffect))

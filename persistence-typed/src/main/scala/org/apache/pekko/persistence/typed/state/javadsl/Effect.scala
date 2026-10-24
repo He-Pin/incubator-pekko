@@ -156,13 +156,13 @@ import pekko.persistence.typed.state.internal.SideEffect
    *                  explicitly typing the lambda parameter like so: `thenRun((SubState state) -> { ... })`).
    *                  If the state is not of the expected type a [[java.lang.ClassCastException]] is thrown.
    */
-  final def thenRun[NewState <: State](callback: function.Procedure[NewState]): EffectBuilder[State] =
+  def thenRun[NewState <: State](callback: function.Procedure[NewState]): EffectBuilder[State] =
     CompositeEffect(this, SideEffect[State](s => callback.apply(s.asInstanceOf[NewState])))
 
   /**
    * Run the given callback. Callbacks are run sequentially.
    */
-  final def thenRun(callback: function.Effect): EffectBuilder[State] =
+  def thenRun(callback: function.Effect): EffectBuilder[State] =
     CompositeEffect(this, SideEffect[State]((_: State) => callback.apply()))
 
   /** The side effect is to stop the actor */
@@ -219,4 +219,21 @@ import pekko.persistence.typed.state.internal.SideEffect
    * by another `unstashAll`.
    */
   def thenUnstashAll(): ReplyEffect[State]
+
+  /**
+   * Run the given callback after the preceding side effects, using the state after persistence.
+   * Callbacks are run sequentially.
+   *
+   * @tparam NewState The expected state subtype. A [[java.lang.ClassCastException]] is thrown if the
+   *                  state is not of this type.
+   * @since 2.0.0
+   */
+  def thenRun[NewState <: State](callback: function.Procedure[NewState]): ReplyEffect[State]
+
+  /**
+   * Run the given callback after the preceding side effects. Callbacks are run sequentially.
+   *
+   * @since 2.0.0
+   */
+  def thenRun(callback: function.Effect): ReplyEffect[State]
 }

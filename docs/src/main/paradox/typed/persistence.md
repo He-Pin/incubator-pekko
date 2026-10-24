@@ -228,6 +228,16 @@ In the example below the state is sent to the `subscriber` ActorRef. Note that t
 the event is passed as parameter of the `thenRun` function. In the case where multiple events have been persisted,
 the state passed to `thenRun` is the updated state after all events have been handled.
 
+An enforced-reply command handler may return a `ReplyEffect` from several branches, such as persisting an
+accepted command with `thenReply` or rejecting it with `reply`. A caller can append a common callback for
+metrics or logging without changing each branch, while retaining the `ReplyEffect` return type:
+@scala[`handler(state, command).thenRun(updatedState => recordState(updatedState))`]@java[`handler.apply(state, command).thenRun(updatedState -> recordState(updatedState))`].
+Callbacks can also be appended to reply effects created with `noReply`, `thenNoReply`, or `stash`.
+
+Callbacks run in registration order. A preceding reply is sent before the callback runs; this does not wait
+for the recipient to receive or process the reply. The same @ref:[side-effect guarantees](#side-effects-ordering-and-guarantees)
+apply: callbacks are at most once and are not executed if persistence fails.
+
 All `thenRun` registered callbacks are executed sequentially after successful execution of the persist statement
 (or immediately, in case of `none` and `unhandled`).
 

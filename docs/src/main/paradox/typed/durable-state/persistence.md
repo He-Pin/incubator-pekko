@@ -173,6 +173,16 @@ In addition to returning the primary `Effect` for the command `DurableStateBehav
 chain side effects that are to be performed after successful persist which is achieved with the `thenRun`
 function that runs the callback passed to it e.g. @scala[`Effect.persist(..).thenRun`]@java[`Effect().persist(..).thenRun`]. 
 
+An enforced-reply command handler may return a `ReplyEffect` from several branches, such as persisting an
+accepted command with `thenReply` or rejecting it with `reply`. A caller can append a common callback for
+metrics or logging without changing each branch, while retaining the `ReplyEffect` return type:
+@scala[`handler(state, command).thenRun(updatedState => recordState(updatedState))`]@java[`handler.apply(state, command).thenRun(updatedState -> recordState(updatedState))`].
+Callbacks can also be appended to reply effects created with `noReply`, `thenNoReply`, or `stash`.
+
+Callbacks run in registration order. A preceding reply is sent before the callback runs; this does not wait
+for the recipient to receive or process the reply. The same @ref:[side-effect guarantees](#side-effects-ordering-and-guarantees)
+apply: callbacks are at most once and are not executed if persistence fails.
+
 All `thenRun` registered callbacks are executed sequentially after successful execution of the persist statement
 (or immediately, in case of `none` and `unhandled`).
 

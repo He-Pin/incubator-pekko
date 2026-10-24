@@ -195,4 +195,12 @@ trait EffectBuilder[+State] extends Effect[State] {
    * by another `unstashAll`.
    */
   def thenUnstashAll(): ReplyEffect[State]
+
+  /**
+   * Run the given callback after the preceding side effects, using the state after persistence.
+   * Callbacks are run sequentially.
+   *
+   * @since 2.0.0
+   */
+  def thenRun(callback: State => Unit): ReplyEffect[State]
 }

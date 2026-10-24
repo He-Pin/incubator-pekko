@@ -13,12 +13,15 @@
 
 package org.apache.pekko.actor.dungeon
 
+import scala.annotation.tailrec
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+import scala.util.Success
 
 import org.apache.pekko
 import pekko.actor.ActorCell
 import pekko.actor.Cancellable
+import pekko.actor.WrappedMessage
 import pekko.actor.dungeon.ReceiveTimeoutCompat
 
 private[pekko] object ReceiveTimeout {
@@ -50,7 +53,7 @@ private[pekko] trait ReceiveTimeout { this: ActorCell =>
   protected def checkReceiveTimeoutIfNeeded(message: Any, beforeReceiveVersion: Int): Unit = {
     val timeoutChanged = receiveTimeoutChanged(beforeReceiveVersion)
     if (hasTimeoutData || timeoutChanged)
-      checkReceiveTimeout(!ReceiveTimeoutCompat.isNotInfluenceReceiveTimeout(message) || timeoutChanged)
+      checkReceiveTimeout(influencesReceiveTimeout(message) || timeoutChanged)
   }
 
   final def checkReceiveTimeout(reschedule: Boolean): Unit = {
@@ -77,6 +80,16 @@ private[pekko] trait ReceiveTimeout { this: ActorCell =>
     data.version += 1
   }
 
+  // Keep envelope inspection local to receive timeouts, preserving markers on the envelope itself as well.
+  @tailrec private def influencesReceiveTimeout(message: Any): Boolean =
+    if (ReceiveTimeoutCompat.isNotInfluenceReceiveTimeout(message)) false
+    else
+      message match {
+        case envelope: WrappedMessage => influencesReceiveTimeout(envelope.message)
+        case Success(response)        => influencesReceiveTimeout(response)
+        case _                        => true
+      }
+
   private def hasTimeoutData: Boolean = receiveTimeoutData ne null
 
   private def receiveTimeoutVersion: Int =
@@ -86,7 +99,7 @@ private[pekko] trait ReceiveTimeout { this: ActorCell =>
     receiveTimeoutVersion != beforeReceiveVersion
 
   protected def cancelReceiveTimeoutIfNeeded(message: Any): Int = {
-    if (hasTimeoutData && !ReceiveTimeoutCompat.isNotInfluenceReceiveTimeout(message))
+    if (hasTimeoutData && influencesReceiveTimeout(message))
       cancelReceiveTimeoutTask()
 
     receiveTimeoutVersion

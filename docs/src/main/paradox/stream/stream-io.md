@@ -161,6 +161,11 @@ Java
 
 The `SSLEngine` instance can then be used with the binding or outgoing connection factory methods.
 
+The GraphStage TLS engine keeps an asynchronous boundary around TLS processing. It sends element
+messages across that boundary without sender-side batching, preserving their order relative to a
+later plaintext-output cancellation from the same handler. This orders boundary messages; it does
+not drain elements still buffered in other operators or change TLS closing policies.
+
 ## Streaming File IO
 
 Pekko Streams provide simple Sources and Sinks that can work with @apidoc[util.ByteString] instances to perform IO operations

@@ -34,6 +34,7 @@ import pekko.io.{ BufferPool, Tcp }
 import pekko.stream._
 import pekko.stream.TLSProtocol._
 import pekko.stream.impl.Stages.DefaultAttributes
+import pekko.stream.impl.fusing.ActorGraphInterpreter
 import pekko.stream.stage.{ GraphStage, InHandler, OutHandler, TimerGraphStageLogic }
 import pekko.util.ByteString
 
@@ -1081,7 +1082,9 @@ import pekko.util.ByteString
   private[pekko] final val UserInputQueueSize = InputBufferMaxSize
   private[pekko] final val UserInputQueueMask = UserInputQueueSize - 1
   private[pekko] val StreamTlsAttributes: Attributes =
-    Attributes.asyncBoundary and Attributes.inputBuffer(InputBufferInitialSize, InputBufferMaxSize)
+    Attributes.asyncBoundary and Attributes.inputBuffer(InputBufferInitialSize, InputBufferMaxSize) and
+    // Send plaintext messages before a subsequent plaintext-output cancellation from the same handler.
+    Attributes(ActorGraphInterpreter.UnbatchedInput)
 
   private[pekko] final val PlainDataAllowedFlag = 1 << 0
   private[pekko] final val StageClosedFlag = 1 << 1

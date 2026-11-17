@@ -70,6 +70,10 @@ object RememberEntitiesFailureSpec {
     }
   }
 
+  class ReportingEntity(started: ActorRef) extends EntityActor {
+    started ! self
+  }
+
   case class EntityEnvelope(entityId: Int, msg: Any)
 
   val extractEntityId: ShardRegion.ExtractEntityId = {
@@ -90,9 +94,11 @@ object RememberEntitiesFailureSpec {
   case class Delay(howLong: FiniteDuration) extends Fail
 
   // outside store since we need to be able to set them before sharding initializes
+  @volatile var controlledLoads = Map.empty[ShardId, ActorRef]
   @volatile var failShardGetEntities = Map.empty[ShardId, Fail]
   @volatile var failCoordinatorGetShards: Option[Fail] = None
 
+  case class LoadRequested(store: ActorRef, shard: ActorRef)
   case class ShardStoreCreated(store: ActorRef, shardId: ShardId)
   case class CoordinatorStoreCreated(store: ActorRef)
 
@@ -120,14 +126,18 @@ object RememberEntitiesFailureSpec {
 
     override def receive: Receive = {
       case RememberEntitiesShardStore.GetEntities =>
-        failShardGetEntities.get(shardId) match {
-          case None                 => sender() ! RememberEntitiesShardStore.RememberedEntities(Set.empty)
-          case Some(NoResponse)     => log.debug("Sending no response for GetEntities")
-          case Some(CrashStore)     => throw TestException("store crash on GetEntities")
-          case Some(StopStore)      => context.stop(self)
-          case Some(Delay(howLong)) =>
-            log.debug("Delaying initial entities listing with {}", howLong)
-            timers.startSingleTimer("get-entities-delay", Delayed(sender(), Set.empty), howLong)
+        controlledLoads.get(shardId) match {
+          case Some(probe) => probe ! LoadRequested(self, sender())
+          case None        =>
+            failShardGetEntities.get(shardId) match {
+              case None                 => sender() ! RememberEntitiesShardStore.RememberedEntities(Set.empty)
+              case Some(NoResponse)     => log.debug("Sending no response for GetEntities")
+              case Some(CrashStore)     => throw TestException("store crash on GetEntities")
+              case Some(StopStore)      => context.stop(self)
+              case Some(Delay(howLong)) =>
+                log.debug("Delaying initial entities listing with {}", howLong)
+                timers.startSingleTimer("get-entities-delay", Delayed(sender(), Set.empty), howLong)
+            }
         }
       case RememberEntitiesShardStore.Update(started, stopped) =>
         failUpdate match {
@@ -239,6 +249,59 @@ class RememberEntitiesFailureSpec
       } finally {
         failShardGetEntities = Map.empty
         system.eventStream.unsubscribe(storeProbe.ref)
+        system.stop(sharding)
+      }
+    }
+
+    "reload remembered entities after handing off an initial load with a late reply" in {
+      val loads = TestProbe()
+      val started = TestProbe()
+      val coordinator = TestProbe()
+      val stateProbe = TestProbe()
+      val rememberedIds = Set("1", "11")
+      controlledLoads = Map("1" -> loads.ref)
+      val sharding = ClusterSharding(system).start(
+        "hand-off-late-initial-load",
+        Props(new ReportingEntity(started.ref)),
+        ClusterShardingSettings(system).withRememberEntities(true),
+        extractEntityId,
+        {
+          case ShardRegion.StartEntity(id) => (id.toInt % 10).toString
+          case envelope: EntityEnvelope    => extractShardId(envelope)
+        })
+      try {
+        coordinator.send(sharding, ShardCoordinator.Internal.HostShard("1"))
+        coordinator.expectMsg(ShardCoordinator.Internal.ShardStarted("1"))
+        // This is emitted only after the store has received GetEntities.
+        val first = loads.expectMsgType[LoadRequested]
+        watch(first.shard)
+        watch(first.store)
+        coordinator.send(sharding, ShardCoordinator.Internal.BeginHandOff("1"))
+        coordinator.expectMsg(ShardCoordinator.Internal.BeginHandOffAck("1"))
+        coordinator.send(sharding, ShardCoordinator.Internal.HandOff("1"))
+        coordinator.expectMsg(ShardCoordinator.Internal.ShardStopped("1"))
+        val terminated = (1 to 2).map(_ => expectMsgType[pekko.actor.Terminated].actor).toSet
+        terminated shouldEqual Set(first.shard, first.store)
+        // Ensure the region processed termination before assigning the shard again.
+        awaitAssert {
+          stateProbe.send(sharding, ShardRegion.GetShardRegionState)
+          val state = stateProbe.expectMsgType[ShardRegion.CurrentShardRegionState]
+          state.shards shouldBe empty
+          state.failed shouldBe empty
+        }
+        first.shard.tell(RememberEntitiesShardStore.RememberedEntities(rememberedIds), first.store)
+        coordinator.send(sharding, ShardCoordinator.Internal.HostShard("1"))
+        coordinator.expectMsg(ShardCoordinator.Internal.ShardStarted("1"))
+        val replacement = loads.expectMsgType[LoadRequested]
+        (replacement.shard should not).equal(first.shard)
+        (replacement.store should not).equal(first.store)
+        replacement.shard.tell(RememberEntitiesShardStore.RememberedEntities(rememberedIds), replacement.store)
+        // No application envelope is sent: these starts must come from the reload.
+        val entities = started.receiveN(rememberedIds.size).map(_.asInstanceOf[ActorRef])
+        entities.map(_.path.name).toSet shouldEqual rememberedIds
+        entities.foreach(_.path.parent shouldEqual replacement.shard.path)
+      } finally {
+        controlledLoads = Map.empty
         system.stop(sharding)
       }
     }
